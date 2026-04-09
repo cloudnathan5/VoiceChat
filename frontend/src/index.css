@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background-primary text-text-primary;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply backdrop-blur-md bg-background-secondary/80 border border-border/50;
+  }
+
+  .message-user {
+    @apply bg-accent-tertiary/20 border-l-4 border-accent-tertiary;
+  }
+
+  .message-ai {
+    @apply bg-background-tertiary/50 border-l-4 border-accent-secondary;
+  }
+
+  .voice-active {
+    box-shadow: 0 0 20px rgba(255, 107, 53, 0.3);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* Internet Explorer 10+ */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Safari and Chrome */
+  }
+}
