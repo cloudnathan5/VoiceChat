@@ -16,6 +16,11 @@ interface ChatState {
   darkMode: boolean
   voiceState: VoiceState
 
+  // TTS state
+  ttsProvider: 'browser' | 'piper' | 'coqui'
+  ttsVoice: string | null
+  ttsVoices: { id: string, name: string }[]
+
   // Actions
   setProviders: (providers: Provider[]) => void
   addProvider: (provider: Provider) => void
@@ -44,6 +49,13 @@ interface ChatState {
   // Voice actions
   setVoiceState: (state: Partial<VoiceState>) => void
   updateVoiceState: (updates: Partial<VoiceState>) => void
+
+  // TTS actions
+  setTTSProvider: (provider: 'browser' | 'piper' | 'coqui') => void
+  setTTSVoice: (voice: string | null) => void
+  setTTSVoices: (voices: { id: string, name: string }[]) => void
+  loadTTTSettings: () => Promise<void>
+  loadTTSVoices: () => Promise<void>
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -67,10 +79,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
     audioContext: undefined,
     mediaRecorder: undefined
   },
+  ttsProvider: 'browser',
+  ttsVoice: null,
+  ttsVoices: [],
 
   // Voice actions
   setVoiceState: (state) => set({ voiceState: { ...get().voiceState, ...state } }),
   updateVoiceState: (updates) => set((state) => ({ voiceState: { ...state.voiceState, ...updates } })),
+
+  // TTS actions
+  setTTSProvider: (provider) => set({ ttsProvider: provider }),
+  setTTSVoice: (voice) => set({ ttsVoice: voice }),
+  setTTSVoices: (voices) => set({ ttsVoices: voices }),
+  loadTTTSettings: async () => {
+    const res = await fetch('/api/tts/settings')
+    if (res.ok) {
+      const settings = await res.json()
+      set({ ttsProvider: settings.provider, ttsVoice: settings.piperVoice })
+    }
+  },
+  loadTTSVoices: async () => {
+    const res = await fetch('/api/tts/voices')
+    if (res.ok) {
+      const data = await res.json()
+      set({ ttsVoices: data.voices })
+    }
+  },
 
   // Provider actions
   setProviders: (providers) => set({ providers }),
@@ -118,7 +152,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           console.log('=== NO STREAMING MESSAGE FOR THIS THREAD ===')
           console.log('Current streamingMessages count:', latestForPreserve.streamingMessages.length)
           latestForPreserve.streamingMessages.forEach((m, i) => {
-            console.log(`  Streaming[${i}]: threadId=${m.threadId}, thinkingLen=${m.thinking?.length||0}`)
+            console.log(` Streaming[${i}]: threadId=${m.threadId}, thinkingLen=${m.thinking?.length||0}`)
           })
           console.log('Setting messages WITHOUT touching streamingMessages')
           set({ messages })
