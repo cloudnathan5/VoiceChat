@@ -85,6 +85,23 @@ class DatabaseManager {
   }
 
   deleteProvider(id) {
+    // Get all threads that reference this provider
+    const threadsStmt = this.db.prepare('SELECT id FROM threads WHERE provider_id = ? OR selected_provider_id = ?')
+    const threads = threadsStmt.all(id, id)
+
+    // Delete all messages for those threads
+    if (threads.length > 0) {
+      const threadIds = threads.map(t => t.id)
+      const placeholders = threadIds.map(() => '?').join(',')
+      const deleteMessagesStmt = this.db.prepare(`DELETE FROM messages WHERE thread_id IN (${placeholders})`)
+      deleteMessagesStmt.run(...threadIds)
+
+      // Clear provider references in threads (but keep the threads)
+      const clearRefsStmt = this.db.prepare('UPDATE threads SET provider_id = NULL, selected_provider_id = NULL, selected_model_id = NULL WHERE provider_id = ? OR selected_provider_id = ?')
+      clearRefsStmt.run(id, id)
+    }
+
+    // Now delete the provider
     const stmt = this.db.prepare('DELETE FROM providers WHERE id = ?')
     stmt.run(id)
   }
