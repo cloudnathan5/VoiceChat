@@ -3,6 +3,11 @@ import cors from 'cors'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import Database from './database.js'
+import TTSManager from './tts/manager.js'
+import multer from 'multer'
+import path from 'path'
+import fs from 'fs'
+import { v4 as uuidv4 } from 'uuid'
 
 console.log('Imports successful')
 
@@ -20,6 +25,25 @@ console.log('Server objects created')
 // Initialize database
 const db = new Database()
 console.log('Database initialized successfully')
+
+// Initialize TTS Manager
+const ttsManager = new TTSManager(db)
+
+// Configure multer for voice sample uploads
+const voiceStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(process.cwd(), 'voice-samples')
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true })
+    }
+    cb(null, uploadDir)
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname)
+    cb(null, `${uuidv4()}${ext}`)
+  }
+})
+const voiceUpload = multer({ storage: voiceStorage, limits: { fileSize: 10 * 1024 * 1024 } })
 
 // Middleware
 app.use(cors({
@@ -53,7 +77,104 @@ app.post('/api/providers', (req, res) => {
 
 app.delete('/api/providers/:id', (req, res) => {
   const { id } = req.params
-  db.deleteProvider(id)
+  try {
+    db.deleteProvider(id)
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting provider:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// TTS routes
+// Get available TTS providers
+app.get('/api/tts/providers', (req, res) => {
+  const providers = ttsManager.providers
+  const infos = Object.entries(providers).map(([id, provider]) => ({
+    id,
+    name: provider.name,
+    status: 'ready'
+  }))
+  res.json({ providers: infos })
+})
+
+// Get available TTS voices for active provider
+app.get('/api/tts/voices', (req, res) => {
+  try {
+    const voices = ttsManager.getVoices()
+    res.json({ voices })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Synthesize speech
+app.post('/api/tts/speak', async (req, res) => {
+  const { text, voice_id } = req.body
+  if (!text) {
+    return res.status(400).json({ error: 'text is required' })
+  }
+  try {
+    const audio = await ttsManager.speak(text, { voice: voice_id })
+    res.set('Content-Type', 'audio/wav')
+    res.set('Content-Length', audio.length)
+    res.send(audio)
+  } catch (error) {
+    console.error('TTS speak error:', error)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Coqui voice sample management
+app.get('/api/tts/coqui/voices', (req, res) => {
+  try {
+    const voices = ttsManager.getVoiceSamples()
+    res.json({ voices })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.post('/api/tts/coqui/voices', voiceUpload.single('audio'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Audio file required' })
+  }
+  const { name } = req.body
+  if (!name) {
+    fs.unlinkSync(req.file.path)
+    return res.status(400).json({ error: 'name is required' })
+  }
+  try {
+    const durationSeconds = Math.round(req.file.size / 16000)
+    const sample = await ttsManager.addVoiceSample(name, req.file.path, durationSeconds)
+    res.json({ id: sample.id, name: sample.name, status: 'ready' })
+  } catch (error) {
+    fs.unlinkSync(req.file.path)
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.delete('/api/tts/coqui/voices/:id', async (req, res) => {
+  const { id } = req.params
+  try {
+    await ttsManager.deleteVoiceSample(id)
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// TTS settings
+app.get('/api/tts/settings', (req, res) => {
+  const provider = db.getSetting('tts_provider') || 'browser'
+  const piperVoice = db.getSetting('tts_piper_voice') || 'en_US-lessac-medium'
+  res.json({ provider, piperVoice })
+})
+
+app.put('/api/tts/settings', (req, res) => {
+  const { provider, piperVoice } = req.body
+  if (provider) db.setSetting('tts_provider', provider)
+  if (piperVoice) db.setSetting('tts_piper_voice', piperVoice)
   res.json({ success: true })
 })
 
