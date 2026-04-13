@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Trash2, Settings, MessageSquare, X, TestTube, Moon, Sun } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
+import TTSSettings from './TTSSettings.jsx'
 
 function Sidebar() {
   const { threads, activeThread, setActiveThread, addThread, removeThread, providers, addProvider, removeProvider, setProviderModels, lastUsedProviderId, lastUsedModelId, darkMode, toggleDarkMode } = useChatStore()
@@ -236,6 +237,9 @@ function Sidebar() {
                     </div>
                   ))}
                 </div>
+<div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+<TTSSettings />
+</div>
               )}
             </div>
           </div>
