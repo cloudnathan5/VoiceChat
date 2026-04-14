@@ -216,46 +216,40 @@ export function useVoiceChat() {
     }
   }, [])
 
-  // Text-to-Speech using browser SpeechSynthesis
-  const speak = useCallback((text, options = {}) => {
+const speak = useCallback(async (text, options = {}) => {
+  try {
+    const response = await fetch('/api/tts/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice_id: options.voice })
+    })
+    if (!response.ok) {
+      const error = await response.json()
+      console.error('TTS error:', error.error)
+      return false
+    }
+    const audioBuffer = await response.arrayBuffer()
+    // Play audio
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+    const audioData = await audioContext.decodeAudioData(audioBuffer)
+    const source = audioContext.createBufferSource()
+    source.buffer = audioData
+    source.connect(audioContext.destination)
+    setIsSpeaking(true)
     return new Promise((resolve) => {
-      if (!('speechSynthesis' in window)) {
-        console.warn('SpeechSynthesis not supported')
-        resolve(false)
-        return
-      }
-
-      const utterance = new SpeechSynthesisUtterance(text)
-
-      // Apply options
-      if (options.voice) {
-        const voices = speechSynthesis.getVoices()
-        const selectedVoice = voices.find(v => v.name === options.voice)
-        if (selectedVoice) utterance.voice = selectedVoice
-      }
-
-      utterance.pitch = options.pitch || 1.0
-      utterance.rate = options.rate || 1.0
-      utterance.volume = options.volume || 1.0
-
-      utterance.onstart = () => {
-        setIsSpeaking(true)
-      }
-
-      utterance.onend = () => {
+      source.onended = () => {
+        audioContext.close()
         setIsSpeaking(false)
         resolve(true)
       }
-
-      utterance.onerror = (error) => {
-        console.error('Speech synthesis error:', error)
-        setIsSpeaking(false)
-        resolve(false)
-      }
-
-      speechSynthesis.speak(utterance)
+      source.start()
     })
-  }, [])
+  } catch (error) {
+    console.error('Speech synthesis error:', error)
+    setIsSpeaking(false)
+    return false
+  }
+}, [])
 
   // Interrupt current speech
   const interrupt = useCallback(() => {
@@ -265,11 +259,21 @@ export function useVoiceChat() {
     }
   }, [])
 
-  // Get available TTS voices
-  const getVoices = useCallback(() => {
-    if (!('speechSynthesis' in window)) return []
+const getVoices = useCallback(async () => {
+  try {
+    const response = await fetch('/api/tts/voices')
+    if (response.ok) {
+      const data = await response.json()
+      return data.voices
+    }
+  } catch (error) {
+    console.error('Failed to get voices:', error)
+  }
+  // Fallback to browser voices if ('speechSynthesis' in window) {
     return speechSynthesis.getVoices()
-  }, [])
+  }
+  return []
+}, [])
 
   // Cleanup on unmount
   useEffect(() => {
