@@ -5,7 +5,7 @@ import { useVoiceChat } from '../hooks/useVoiceChat'
 import MessageBubble from './MessageBubble'
 
 function ChatArea() {
-  const { activeThread, messages, addMessage, isLoading, isStreaming, setIsLoading, setIsStreaming, providers, models, updateThread, setProviderModels, setLastUsedSelections, darkMode, voiceState, updateVoiceState } = useChatStore()
+  const { activeThread, messages, addMessage, isLoading, isStreaming, setIsLoading, setIsStreaming, providers, models, updateThread, setProviderModels, setLastUsedSelections, darkMode, voiceState, updateVoiceState, ttsProvider, ttsVoice } = useChatStore()
   const [inputText, setInputText] = useState('')
   const [isVoiceActive, setIsVoiceActive] = useState(false)
   const [selectedProvider, setSelectedProvider] = useState('')
@@ -13,6 +13,49 @@ function ChatArea() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isTTSEnabled, setIsTTSEnabled] = useState(true)
   const messagesEndRef = useRef(null)
+  const ttsBufferRef = useRef('')
+  const ttsInProgressRef = useRef(false)
+  const ttsFlushScheduledRef = useRef(false)
+
+  // Filter to remove emojis and non-speech characters for TTS
+  const filterForSpeech = (text) => {
+    if (!text) return ''
+    // Remove emojis, symbols, and non-speech characters, keep basic punctuation and letters
+    return text
+      .replace(/[\p{Emoji_Presentation}\p{Emoji}\p{Extended_Pictographic}]/gu, '')
+      .replace(/[^\w\s.,!?'"''""":;\-—()[\]{}<>@#$%^&*+=~`]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  // Flush TTS buffer - speak accumulated text when buffer is large enough or ends with punctuation
+  const flushTTSBuffer = async () => {
+    if (!isTTSEnabled || !ttsBufferRef.current.trim()) return
+
+    // Prevent concurrent flushes - if already flushing, schedule another flush for after
+    if (ttsInProgressRef.current) {
+      if (!ttsFlushScheduledRef.current) {
+        ttsFlushScheduledRef.current = true
+        setTimeout(() => {
+          ttsFlushScheduledRef.current = false
+          flushTTSBuffer()
+        }, 200)
+      }
+      return
+    }
+
+    const text = filterForSpeech(ttsBufferRef.current)
+    ttsBufferRef.current = ''
+
+    if (!text) return
+
+    ttsInProgressRef.current = true
+    try {
+      await speak(text, { provider: ttsProvider, voice: ttsVoice })
+    } finally {
+      ttsInProgressRef.current = false
+    }
+  }
 
   // Enhanced voice chat hook
   const {
@@ -23,6 +66,8 @@ function ChatArea() {
     stopListening,
     speak,
     interrupt,
+    connectSocket,
+    abortGeneration,
     getVoices
   } = useVoiceChat()
 
@@ -78,202 +123,145 @@ function ChatArea() {
   }, [activeThread])
 
   const handleSendMessage = async () => {
-    if (!inputText.trim() || !activeThread) return
+  if (!inputText.trim() || !activeThread) return
 
-    const userMessage = {
-      id: Date.now().toString(),
-      threadId: activeThread.id,
-      role: 'user',
-      content: inputText,
-      createdAt: new Date().toISOString()
-    }
+  // Interrupt any ongoing TTS when sending a message
+  interrupt()
 
-    addMessage(userMessage)
-    setInputText('')
-    setIsLoading(true)
-    setIsStreaming(true)
+  const userMessage = {
+    id: Date.now().toString(),
+    threadId: activeThread.id,
+    role: 'user',
+    content: inputText,
+    createdAt: new Date().toISOString()
+  }
 
-    // Create streaming AI message
-    const streamingMessageId = (Date.now() + 1).toString()
-    const streamingMessage = {
+  addMessage(userMessage)
+  setInputText('')
+  setIsLoading(true)
+  setIsStreaming(true)
+
+  // Create streaming AI message
+  const streamingMessageId = (Date.now() + 1).toString()
+  const streamingMessage = {
+    id: streamingMessageId,
+    threadId: activeThread.id,
+    role: 'assistant',
+    content: '',
+    createdAt: new Date().toISOString(),
+    modelId: selectedModel,
+    isStreaming: true
+  }
+  addMessage(streamingMessage)
+
+  const providerId = selectedProvider || activeThread.providerId
+  if (!providerId) {
+    useChatStore.getState().replaceStreamingMessage(streamingMessageId, {
       id: streamingMessageId,
       threadId: activeThread.id,
       role: 'assistant',
-      content: '',
+      content: 'No provider selected',
       createdAt: new Date().toISOString(),
-      modelId: selectedModel,
-      isStreaming: true
-    }
-    addMessage(streamingMessage)
+      isStreaming: false
+    })
+    setIsLoading(false)
+    setIsStreaming(false)
+    return
+  }
 
-    try {
-      const response = await fetch(`/api/threads/${activeThread.id}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: inputText,
-          role: 'user',
-          providerId: selectedProvider || activeThread.providerId,
-          modelId: selectedModel,
-          stream: true
-        })
-      })
+  let fullContent = ''
+  let thinkingContent = ''
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to get AI response')
-      }
-
-      // Handle streaming response
-      if (response.headers.get('content-type')?.includes('text/event-stream')) {
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder()
-        let fullContent = ''
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-
-            const chunk = decoder.decode(value)
-            const lines = chunk.split('\n')
-
-            for (const line of lines) {
-              if (line.startsWith('event: ')) {
-                const eventType = line.slice(7)
-
-                if (eventType === 'token') {
-                  // Handle token events
-                  const nextLine = lines[lines.indexOf(line) + 1]
-                  if (nextLine && nextLine.startsWith('data: ')) {
-                    try {
-                      const data = JSON.parse(nextLine.slice(6))
-                      if (data.content) {
-                        fullContent += data.content
-                        // Update response content while preserving thinking tokens
-                        const currentMessage = useChatStore.getState().messages.find(m => m.id === streamingMessageId)
-                        useChatStore.getState().replaceStreamingMessage(streamingMessageId, {
-                          id: streamingMessageId,
-                          threadId: activeThread.id,
-                          role: 'assistant',
-                          content: fullContent,
-                          thinking: currentMessage?.thinking || '',
-                          createdAt: new Date().toISOString(),
-                          modelId: selectedModel,
-                          isStreaming: true
-                        })
-                      }
-                    } catch (e) {
-                      // Ignore parsing errors
-                    }
-                  }
-                } else if (eventType === 'thinking') {
-                  // Handle thinking tokens
-                  const nextLine = lines[lines.indexOf(line) + 1]
-                  if (nextLine && nextLine.startsWith('data: ')) {
-                    try {
-                      const data = JSON.parse(nextLine.slice(6))
-                      if (data.content) {
-                        // Accumulate thinking tokens like response content
-                        const currentMessage = useChatStore.getState().messages.find(m => m.id === streamingMessageId)
-                        const newThinking = (currentMessage?.thinking || '') + data.content
-
-                        // Update thinking tokens while preserving response content using replaceStreamingMessage
-                        useChatStore.getState().replaceStreamingMessage(streamingMessageId, {
-                          id: streamingMessageId,
-                          threadId: activeThread.id,
-                          role: 'assistant',
-                          content: currentMessage?.content || '',
-                          thinking: newThinking,
-                          createdAt: currentMessage?.createdAt || new Date().toISOString(),
-                          modelId: selectedModel,
-                          isStreaming: true
-                        })
-                      }
-                    } catch (e) {
-                      // Ignore parsing errors
-                    }
-                  }
-                } else if (eventType === 'complete') {
-                  // Handle completion event
-                  const nextLine = lines[lines.indexOf(line) + 1]
-                  if (nextLine && nextLine.startsWith('data: ')) {
-                    try {
-                      const data = JSON.parse(nextLine.slice(6))
-                      // Replace streaming message with final message
-                      useChatStore.getState().replaceStreamingMessage(streamingMessageId, {
-                        ...data.message,
-                        id: streamingMessageId,
-                        isStreaming: false
-                      })
-                    } catch (e) {
-                      console.error('Error parsing completion data:', e)
-                    }
-                  }
-                  break
-                } else if (eventType === 'error') {
-                  // Handle error event
-                  const nextLine = lines[lines.indexOf(line) + 1]
-                  if (nextLine && nextLine.startsWith('data: ')) {
-                    try {
-                      const data = JSON.parse(nextLine.slice(6))
-                      throw new Error(data.error || 'Streaming error')
-                    } catch (e) {
-                      console.error('Error parsing error data:', e)
-                    }
-                  }
-                  break
-                }
-              }
-            }
-          }
-
-          // Speak the AI response if TTS is enabled (inside streaming block)
-          if (isTTSEnabled && fullContent) {
-            await speak(fullContent)
-          }
-        } finally {
-          reader.releaseLock()
-        }
-      } else {
-        // Fallback to non-streaming response
-        const responseData = await response.json()
-        const aiResponse = responseData.aiMessage
-
-        if (aiResponse) {
-          useChatStore.getState().replaceStreamingMessage(streamingMessageId, {
-            ...aiResponse,
-            id: streamingMessageId,
-            isStreaming: false
-          })
-
-          // Speak the AI response if TTS is enabled (for non-streaming)
-          if (isTTSEnabled && aiResponse.content) {
-            await speak(aiResponse.content)
-          }
-        } else {
-          throw new Error('No AI response received')
-        }
-      }
-
-    } catch (error) {
-      console.error('Failed to send message:', error)
-      // Update streaming message with error
+  // Connect via Socket.io for streaming with abort support
+  const socket = connectSocket(activeThread.id, {
+    onToken: (data) => {
+      // Regular token for UI update - only updates UI, don't buffer for TTS
+      // TTS is handled via quick_token for complete sentences
+      fullContent += data.content
       useChatStore.getState().replaceStreamingMessage(streamingMessageId, {
         id: streamingMessageId,
         threadId: activeThread.id,
         role: 'assistant',
-        content: `Error: ${error.message}`,
+        content: fullContent,
+        thinking: thinkingContent,
+        createdAt: new Date().toISOString(),
+        modelId: selectedModel,
+        isStreaming: true
+      })
+    },
+    onThinking: (data) => {
+      // Thinking tokens
+      thinkingContent += data.content
+      useChatStore.getState().replaceStreamingMessage(streamingMessageId, {
+        id: streamingMessageId,
+        threadId: activeThread.id,
+        role: 'assistant',
+        content: fullContent,
+        thinking: thinkingContent,
+        createdAt: new Date().toISOString(),
+        modelId: selectedModel,
+        isStreaming: true
+      })
+    },
+    onQuickToken: (data) => {
+      // Quick answer token - speak immediately for low latency
+      if (isTTSEnabled && data.content) {
+        const filtered = filterForSpeech(data.content)
+        if (filtered && !isSpeaking) {
+          speak(filtered, { provider: ttsProvider, voice: ttsVoice })
+        }
+      }
+      // Clear buffer since we already spoke the sentence
+      ttsBufferRef.current = ''
+    },
+    onComplete: (data) => {
+      // Stream complete - speak any remaining buffer
+      if (ttsBufferRef.current.trim()) {
+        const finalText = filterForSpeech(ttsBufferRef.current)
+        ttsBufferRef.current = ''
+        if (finalText) {
+          speak(finalText, { provider: ttsProvider, voice: ttsVoice })
+        }
+      }
+      useChatStore.getState().replaceStreamingMessage(streamingMessageId, {
+        id: streamingMessageId,
+        threadId: activeThread.id,
+        role: 'assistant',
+        content: fullContent,
+        thinking: thinkingContent,
+        createdAt: new Date().toISOString(),
+        modelId: selectedModel,
+        isStreaming: false
+      })
+      setIsLoading(false)
+      setIsStreaming(false)
+    },
+    onError: (data) => {
+      console.error('Stream error:', data.error)
+      useChatStore.getState().replaceStreamingMessage(streamingMessageId, {
+        id: streamingMessageId,
+        threadId: activeThread.id,
+        role: 'assistant',
+        content: `Error: ${data.error || 'Streaming failed'}`,
         createdAt: new Date().toISOString(),
         isStreaming: false
       })
-    } finally {
       setIsLoading(false)
       setIsStreaming(false)
     }
-  }
+  })
 
-  const handleKeyPress = (e) => {
+  // Start the stream
+  socket.emit('start-stream', {
+    threadId: activeThread.id,
+    content: inputText,
+    role: 'user',
+    providerId: providerId,
+    modelId: selectedModel
+  })
+}
+
+const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
@@ -286,6 +274,8 @@ function ChatArea() {
 
     if (newVoiceActive) {
       try {
+        // Abort any ongoing generation and interrupt TTS when user starts listening
+        abortGeneration()
         await startListening()
         setInputText('') // Clear input when starting voice
       } catch (error) {

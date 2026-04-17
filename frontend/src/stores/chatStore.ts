@@ -79,8 +79,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     audioContext: undefined,
     mediaRecorder: undefined
   },
-  ttsProvider: 'browser',
-  ttsVoice: null,
+  ttsProvider: localStorage.getItem('ttsProvider') as 'browser' | 'piper' | 'coqui' || 'browser',
+  ttsVoice: localStorage.getItem('ttsVoice'),
   ttsVoices: [],
 
   // Voice actions
@@ -88,8 +88,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   updateVoiceState: (updates) => set((state) => ({ voiceState: { ...state.voiceState, ...updates } })),
 
   // TTS actions
-  setTTSProvider: (provider) => set({ ttsProvider: provider }),
-  setTTSVoice: (voice) => set({ ttsVoice: voice }),
+  setTTSProvider: (provider) => {
+      localStorage.setItem('ttsProvider', provider)
+      set({ ttsProvider: provider })
+    },
+  setTTSVoice: (voice) => {
+      localStorage.setItem('ttsVoice', voice || '')
+      set({ ttsVoice: voice })
+    },
   setTTSVoices: (voices) => set({ ttsVoices: voices }),
   loadTTTSettings: async () => {
     const res = await fetch('/api/tts/settings')

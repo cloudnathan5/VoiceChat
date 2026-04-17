@@ -1,29 +1,39 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { io } from 'socket.io-client'
 
 // Enhanced voice chat hook with hybrid VAD + STT approach
+// Supports interruptible TTS and WebSocket streaming with abort
 export function useVoiceChat() {
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [latency, setLatency] = useState(0)
 
+  // Refs for voice chat state
   const recognitionRef = useRef(null)
   const audioContextRef = useRef(null)
   const analyserRef = useRef(null)
   const mediaStreamRef = useRef(null)
   const lastSpeechTimeRef = useRef(0)
   const silenceTimeoutRef = useRef(null)
+  const isSpeakingRef = useRef(false) // Sync ref for VAD callback to avoid stale state
+
+  // Refs for interruptible TTS
+  const currentSourceRef = useRef(null)
+  const currentAudioContextRef = useRef(null)
+  const speechSynthesisRef = useRef(null)
+  const socketRef = useRef(null)
+  const interruptRef = useRef(null) // Ref to store interrupt function for VAD callback
+const isInterruptingRef = useRef(false) // Flag to skip error handling during intentional interrupt
 
   // WebRTC-based Voice Activity Detection
   const setupVAD = useCallback(async () => {
     try {
-      // Check if we're in a secure context (HTTPS required for getUserMedia)
       if (!window.isSecureContext) {
         console.warn('getUserMedia requires HTTPS or localhost context')
         return false
       }
 
-      // Check if mediaDevices is available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         console.warn('MediaDevices API not supported')
         return false
@@ -38,7 +48,6 @@ export function useVoiceChat() {
       })
       mediaStreamRef.current = stream
 
-      // Check if AudioContext is available
       if (!window.AudioContext && !window.webkitAudioContext) {
         console.warn('AudioContext not supported')
         return false
@@ -68,9 +77,8 @@ export function useVoiceChat() {
     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
     analyserRef.current.getByteFrequencyData(dataArray)
 
-    // Calculate average volume
     const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
-    const threshold = 30 // Adjustable threshold
+    const threshold = 30
 
     const isSpeech = average > threshold
     const now = Date.now()
@@ -84,7 +92,6 @@ export function useVoiceChat() {
 
   // Browser SpeechRecognition API setup
   const setupSpeechRecognition = useCallback(() => {
-    // Check for SpeechRecognition support
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
       console.warn('SpeechRecognition API not supported')
@@ -114,10 +121,8 @@ export function useVoiceChat() {
         }
       }
 
-      // Update transcript with both final and interim results
       setTranscript(finalTranscript + interimTranscript)
 
-      // If we have final results, reset interim
       if (finalTranscript) {
         setTranscript(finalTranscript.trim())
       }
@@ -130,7 +135,6 @@ export function useVoiceChat() {
     recognition.onend = () => {
       console.log('Speech recognition ended')
       if (isListening) {
-        // Restart recognition if we're still listening
         recognition.start()
       }
     }
@@ -141,13 +145,16 @@ export function useVoiceChat() {
   // Start listening with hybrid VAD + STT
   const startListening = useCallback(async () => {
     try {
-      // Setup WebRTC VAD
+      // If currently speaking, interrupt first
+      if (isSpeaking) {
+        interrupt()
+      }
+
       const vadReady = await setupVAD()
       if (!vadReady) {
         throw new Error('Failed to setup voice activity detection')
       }
 
-      // Setup SpeechRecognition
       const recognition = setupSpeechRecognition()
       if (!recognition) {
         throw new Error('SpeechRecognition not supported')
@@ -158,6 +165,13 @@ export function useVoiceChat() {
 
       setIsListening(true)
       setTranscript('')
+
+      // Abort any ongoing socket connection when user starts speaking
+      if (socketRef.current) {
+        socketRef.current.emit('abort')
+        socketRef.current.disconnect()
+        socketRef.current = null
+      }
 
       // Start VAD monitoring
       const vadInterval = setInterval(() => {
@@ -170,10 +184,14 @@ export function useVoiceChat() {
         const now = Date.now()
 
         if (isSpeech) {
-          // Speech detected - clear any existing silence timeout
+          // Speech detected - clear any existing silence timeout and abort TTS if playing
           if (silenceTimeoutRef.current) {
             clearTimeout(silenceTimeoutRef.current)
             silenceTimeoutRef.current = null
+          }
+          // If TTS is playing, interrupt it when user starts speaking
+          if (isSpeakingRef.current && interruptRef.current) {
+            interruptRef.current()
           }
         } else {
           // Silence detected - set timeout to stop listening after 2 seconds of silence
@@ -216,72 +234,263 @@ export function useVoiceChat() {
     }
   }, [])
 
-const speak = useCallback(async (text, options = {}) => {
-  try {
-    const response = await fetch('/api/tts/speak', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice_id: options.voice })
-    })
-    if (!response.ok) {
-      const error = await response.json()
-      console.error('TTS error:', error.error)
-      return false
-    }
-    const audioBuffer = await response.arrayBuffer()
-    // Play audio
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-    const audioData = await audioContext.decodeAudioData(audioBuffer)
-    const source = audioContext.createBufferSource()
-    source.buffer = audioData
-    source.connect(audioContext.destination)
-    setIsSpeaking(true)
-    return new Promise((resolve) => {
-      source.onended = () => {
-        audioContext.close()
-        setIsSpeaking(false)
-        resolve(true)
-      }
-      source.start()
-    })
-  } catch (error) {
-    console.error('Speech synthesis error:', error)
-    setIsSpeaking(false)
-    return false
-  }
-}, [])
+  // Speak with interruptible playback
+  const speak = useCallback(async (text, options = {}) => {
+    // Interrupt any ongoing speech first
+    interrupt()
 
-  // Interrupt current speech
-  const interrupt = useCallback(() => {
-    if (speechSynthesis.speaking) {
-      speechSynthesis.cancel()
-      setIsSpeaking(false)
+    try {
+      // Browser TTS uses client-side speechSynthesis
+      if (options.provider === 'browser' || !options.provider) {
+        return new Promise((resolve) => {
+          const utterance = new SpeechSynthesisUtterance(text)
+          utterance.rate = 1.0
+          utterance.pitch = 1.0
+          if (options.voice) {
+            const voices = speechSynthesis.getVoices()
+            const selectedVoice = voices.find(v => v.name === options.voice || v.voiceURI === options.voice)
+            if (selectedVoice) utterance.voice = selectedVoice
+          }
+          utterance.onend = () => {
+            setIsSpeaking(false); isSpeakingRef.current = false
+            speechSynthesisRef.current = null
+            resolve(true)
+          }
+ utterance.onerror = (e) => {
+      if (isInterruptingRef.current) {
+        // Intentional interrupt - not a real error
+        speechSynthesisRef.current = null
+        resolve(false)
+        return
+      }
+      console.error('Browser TTS error:', e)
+      setIsSpeaking(false); isSpeakingRef.current = false
+      speechSynthesisRef.current = null
+      resolve(false)
+    }
+          setIsSpeaking(true); isSpeakingRef.current = true
+          speechSynthesisRef.current = utterance
+          speechSynthesis.speak(utterance)
+        })
+      }
+
+      // Server-side TTS (Piper, Coqui) - fallback to browser TTS on failure
+      const response = await fetch('/api/tts/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice_id: options.voice })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        console.warn('Server TTS failed, falling back to browser TTS:', error.error)
+        return new Promise((resolve) => {
+          const utterance = new SpeechSynthesisUtterance(text)
+          utterance.rate = 1.0
+          utterance.pitch = 1.0
+          utterance.onend = () => {
+            setIsSpeaking(false); isSpeakingRef.current = false
+            speechSynthesisRef.current = null
+            resolve(true)
+          }
+ utterance.onerror = (e) => {
+      if (isInterruptingRef.current) {
+        // Intentional interrupt - not a real error
+        speechSynthesisRef.current = null
+        resolve(false)
+        return
+      }
+      console.error('Browser TTS error:', e)
+      setIsSpeaking(false); isSpeakingRef.current = false
+      speechSynthesisRef.current = null
+      resolve(false)
+    }
+          setIsSpeaking(true); isSpeakingRef.current = true
+          speechSynthesisRef.current = utterance
+          speechSynthesis.speak(utterance)
+        })
+      }
+
+      const audioBuffer = await response.arrayBuffer()
+
+      // Play audio with interruptible source
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+      const audioData = await audioContext.decodeAudioData(audioBuffer)
+      const source = audioContext.createBufferSource()
+      source.buffer = audioData
+      source.connect(audioContext.destination)
+
+      // Store refs for interruption
+      currentSourceRef.current = source
+      currentAudioContextRef.current = audioContext
+
+      setIsSpeaking(true); isSpeakingRef.current = true
+
+      return new Promise((resolve) => {
+        source.onended = () => {
+          currentSourceRef.current = null
+          currentAudioContextRef.current = null
+          audioContext.close()
+          setIsSpeaking(false); isSpeakingRef.current = false
+          resolve(true)
+        }
+        source.start()
+      })
+    } catch (error) {
+      console.error('Speech synthesis error:', error)
+      setIsSpeaking(false); isSpeakingRef.current = false
+      currentSourceRef.current = null
+      currentAudioContextRef.current = null
+      return false
     }
   }, [])
 
-const getVoices = useCallback(async () => {
-  try {
-    const response = await fetch('/api/tts/voices')
-    if (response.ok) {
-      const data = await response.json()
-      return data.voices
+  // Interrupt current speech - can be called from anywhere
+  const interrupt = useCallback(() => {
+    // Stop speechSynthesis if playing
+    isInterruptingRef.current = true
+  if (speechSynthesis.speaking) {
+      speechSynthesis.cancel()
     }
-  } catch (error) {
-    console.error('Failed to get voices:', error)
-  }
-  // Fallback to browser voices if ('speechSynthesis' in window) {
-    return speechSynthesis.getVoices()
-  }
-  return []
-}, [])
+    speechSynthesisRef.current = null
+
+    // Stop AudioBufferSourceNode if playing
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop()
+      } catch (e) {
+        // Ignore if already stopped
+      }
+      currentSourceRef.current = null
+    }
+
+    // Close AudioContext if open
+    if (currentAudioContextRef.current) {
+      try {
+        currentAudioContextRef.current.close()
+      } catch (e) {
+        // Ignore if already closed
+      }
+      currentAudioContextRef.current = null
+    }
+
+    setIsSpeaking(false); isSpeakingRef.current = false
+  }, [])
+
+  // Store interrupt function in ref for use by VAD callback
+  interruptRef.current = interrupt
+
+  // Socket.io connection for WebSocket streaming with abort support
+  const connectSocket = useCallback((threadId, callbacks = {}) => {
+    // Disconnect existing socket
+    if (socketRef.current) {
+      socketRef.current.disconnect()
+    }
+
+    const socket = io('http://localhost:4001', {
+      transports: ['websocket']
+    })
+
+    socketRef.current = socket
+
+    socket.on('connect', () => {
+      console.log('Socket connected')
+      socket.emit('join_thread', { threadId })
+    })
+
+    socket.on('token', (data) => {
+      if (callbacks.onToken) callbacks.onToken(data)
+    })
+
+    socket.on('quick_token', (data) => {
+      // Quick answer token for immediate TTS playback
+      if (callbacks.onQuickToken) callbacks.onQuickToken(data)
+    })
+
+    socket.on('thinking', (data) => {
+      if (callbacks.onThinking) callbacks.onThinking(data)
+    })
+
+    socket.on('complete', (data) => {
+      if (callbacks.onComplete) callbacks.onComplete(data)
+      setIsSpeaking(false); isSpeakingRef.current = false
+    })
+
+    // Also handle stream_* events from Socket.io streaming
+    socket.on('stream_complete', (data) => {
+      if (callbacks.onComplete) callbacks.onComplete(data)
+      setIsSpeaking(false); isSpeakingRef.current = false
+    })
+
+    socket.on('stream_error', (data) => {
+      if (callbacks.onError) callbacks.onError(data)
+      setIsSpeaking(false); isSpeakingRef.current = false
+    })
+
+    socket.on('stream_aborted', (data) => {
+ console.log('Stream aborted by server')
+ if (interruptRef.current) {
+   interruptRef.current()
+ }
+ setIsSpeaking(false); isSpeakingRef.current = false
+ })
+
+    socket.on('error', (data) => {
+      if (callbacks.onError) callbacks.onError(data)
+      setIsSpeaking(false); isSpeakingRef.current = false
+    })
+
+    socket.on('abort_ack', () => {
+      console.log('Server acknowledged abort')
+      setIsSpeaking(false); isSpeakingRef.current = false
+    })
+
+    return socket
+  }, [])
+
+  // Send abort signal to server
+  const abortGeneration = useCallback(() => {
+    if (socketRef.current) {
+      socketRef.current.emit('abort')
+    }
+    if (interruptRef.current) {
+      interruptRef.current()
+    }
+  }, [])
+
+  // Get socket instance
+  const getSocket = useCallback(() => {
+    return socketRef.current
+  }, [])
+
+  const getVoices = useCallback(async () => {
+    try {
+      const response = await fetch('/api/tts/voices')
+      if (response.ok) {
+        const data = await response.json()
+        return data.voices
+      }
+    } catch (error) {
+      console.error('Failed to get voices:', error)
+    }
+    if ('speechSynthesis' in window) {
+      return speechSynthesis.getVoices()
+    }
+    return []
+  }, [])
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopListening()
-      interrupt()
+      if (interruptRef.current) {
+        interruptRef.current()
+      }
+      if (socketRef.current) {
+        socketRef.current.disconnect()
+      }
     }
-  }, [stopListening, interrupt])
+  }, [stopListening])
 
   return {
     // State
@@ -295,6 +504,9 @@ const getVoices = useCallback(async () => {
     stopListening,
     speak,
     interrupt,
+    abortGeneration,
+    connectSocket,
+    getSocket,
     getVoices
   }
 }

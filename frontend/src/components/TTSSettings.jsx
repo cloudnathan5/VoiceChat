@@ -1,4 +1,3 @@
-// frontend/src/components/TTSSettings.jsx
 import React, { useState, useEffect } from 'react'
 import { Upload, Trash2, Download, RefreshCw } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'

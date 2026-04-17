@@ -600,7 +600,190 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id)
   })
+  socket.on('start-stream', async (data) => {
+    const { threadId, content, role, providerId, modelId } = data
+    console.log(`Start stream requested for thread ${threadId}`)
+
+    try {
+      const t0 = Date.now()
+      const provider = db.getProvider(providerId)
+      console.log(`Provider lookup: ${Date.now() - t0}ms`)
+      if (!provider) {
+        socket.emit('stream_error', { error: 'Provider not found' })
+        return
+      }
+
+      const t1 = Date.now()
+      const conversationHistory = db.getMessages(threadId)
+      console.log(`History lookup: ${Date.now() - t1}ms, ${conversationHistory.length} messages`)
+
+      const t2 = Date.now()
+      db.createMessage(threadId, content, role || 'user')
+      console.log(`Message create: ${Date.now() - t2}ms`)
+
+      const abortController = new AbortController()
+      const t3 = Date.now()
+      console.log(`Starting fetch...`)
+      ongoingGenerations.set(socket.id, { abortController, threadId, startTime: t3 })
+
+      const fullResponse = await callAIProviderSocketIO(provider, conversationHistory, content, modelId, abortController, socket)
+      console.log(`Total LLM call time: ${Date.now() - t3}ms`)
+
+      const aiMessage = db.createMessage(threadId, fullResponse, 'assistant')
+      ongoingGenerations.delete(socket.id)
+      socket.emit('stream_complete', { message: aiMessage })
+    } catch (error) {
+      ongoingGenerations.delete(socket.id)
+      if (error.name === 'AbortError') {
+        socket.emit('stream_aborted', {})
+      } else {
+        console.error('Stream error:', error)
+        socket.emit('stream_error', { error: error.message })
+      }
+    }
+  })
+
+  socket.on('abort', () => {
+    const gen = ongoingGenerations.get(socket.id)
+    if (gen) {
+      gen.abortController.abort()
+      socket.emit('abort_ack')
+    }
+  })
+
 })
+
+
+// Socket.IO version of streaming with abort support
+async function callAIProviderSocketIO(provider, conversationHistory, currentMessage, modelId, abortController, socket) {
+  let endpoint = '/chat/completions'
+  let headers = {
+    'Authorization': `Bearer ${provider.api_key}`,
+    'Content-Type': 'application/json'
+  }
+
+  const messages = conversationHistory.map(msg => ({
+    role: msg.role,
+    content: msg.content
+  }))
+  messages.push({ role: 'user', content: currentMessage })
+
+  let body = {
+    model: modelId || 'gpt-3.5-turbo',
+    messages: messages,
+    max_tokens: 2000,
+    stream: true
+  }
+
+  if (provider.name.toLowerCase().includes('anthropic')) {
+    endpoint = '/v1/messages'
+    headers = {
+      'x-api-key': provider.api_key,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json'
+    }
+    body = {
+      model: modelId || 'claude-3-sonnet-20240229',
+      messages: messages,
+      max_tokens: 2000,
+      stream: true
+    }
+  } else if (provider.name.toLowerCase().includes('nvidia')) {
+    endpoint = '/v1/chat/completions'
+    body.stream = true
+  }
+
+  const t4 = Date.now()
+  console.log(`Fetching from ${provider.base_url}${endpoint}...`)
+
+  const response = await fetch(`${provider.base_url}${endpoint}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    signal: abortController.signal
+  })
+
+  console.log(`Fetch started: ${Date.now() - t4}ms`)
+
+  if (!response.ok) {
+    throw new Error(`Provider returned ${response.status}: ${response.statusText}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let fullResponse = ''
+  let pendingText = ''
+  let firstTokenTime = null
+
+  try {
+    while (true) {
+      if (abortController.signal.aborted) {
+        reader.cancel()
+        throw new DOMException('Aborted', 'AbortError')
+      }
+
+      const { done, value } = await reader.read()
+      if (done) break
+
+      const chunk = decoder.decode(value)
+      const lines = chunk.split('\n')
+
+      for (const line of lines) {
+        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          try {
+            const data = JSON.parse(line.slice(6))
+            let content = ''
+            let thinking = ''
+
+            if (provider.name.toLowerCase().includes('anthropic')) {
+              content = data.content?.[0]?.text || ''
+              thinking = data.thinking || ''
+            } else {
+              content = data.choices?.[0]?.delta?.content || ''
+              thinking = data.choices?.[0]?.delta?.thinking || data.thinking || ''
+            }
+
+            if (thinking) {
+              socket.emit('thinking', { content: thinking })
+            }
+
+            if (content) {
+              fullResponse += content
+              pendingText += content
+
+              // Find sentence boundaries for quick answer TTS
+              const sentenceMatch = pendingText.match(/[.!?][\s]+|^[^.!?]+[.!?][\s]*/)
+              if (sentenceMatch) {
+                const sentence = sentenceMatch[0].trim()
+                if (sentence.length > 5) {
+                  socket.emit('quick_token', { content: sentence, accumulated: fullResponse })
+                  pendingText = pendingText.slice(sentenceMatch[0].length)
+                }
+              }
+
+              if (!firstTokenTime) {
+                firstTokenTime = Date.now()
+                console.log(`First token received: ${firstTokenTime - t4}ms after fetch start`)
+              }
+
+              socket.emit('token', { content, accumulated: fullResponse })
+            }
+          } catch (e) {
+            // Ignore parsing errors
+          }
+        }
+      }
+    }
+
+    if (pendingText.trim()) {
+      socket.emit('quick_token', { content: pendingText.trim(), accumulated: fullResponse })
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return fullResponse
+}
 
 const PORT = process.env.PORT || 4001
 

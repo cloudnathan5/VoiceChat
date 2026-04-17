@@ -6,6 +6,7 @@ import path from 'path'
 import os from 'os'
 
 const PIPER_MODELS_DIR = path.join(process.cwd(), 'tts-models', 'piper')
+const PIPER_BIN = path.join(process.cwd(), 'tts-bin', 'piper', 'piper')
 
 // Default Piper voices available for download
 const AVAILABLE_VOICES = [
@@ -73,12 +74,13 @@ class PiperTTSProvider extends TTSProvider {
     const tempWav = path.join(os.tmpdir(), `piper-${Date.now()}.wav`)
 
     return new Promise((resolve, reject) => {
-      const piperProcess = spawn('piper', [
+      const piperProcess = spawn(PIPER_BIN, [
         '--model', modelPath,
         '--config', configPath,
         '--output-file', tempWav
       ], {
-        cwd: PIPER_MODELS_DIR
+        cwd: PIPER_MODELS_DIR,
+ env: { ...process.env, LD_LIBRARY_PATH: path.join(process.cwd(), 'tts-bin') }
       })
 
       let errorOutput = ''
