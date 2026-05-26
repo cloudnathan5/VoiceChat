@@ -1,39 +1,39 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { io } from 'socket.io-client'
+import io from 'socket.io-client'
 
-// Enhanced voice chat hook with hybrid VAD + STT approach
-// Supports interruptible TTS and WebSocket streaming with abort
+// Voice chat hook with VAD + live transcription + auto-send
 export function useVoiceChat() {
   const [isListening, setIsListening] = useState(false)
-  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [isRecording, setIsRecording] = useState(false) // Push-to-talk state
   const [transcript, setTranscript] = useState('')
-  const [latency, setLatency] = useState(0)
+  const [audioLevel, setAudioLevel] = useState(0)
+  const [voiceMode, setVoiceModeState] = useState('continuous') // 'continuous' | 'push-to-talk'
+  const [isInterrupting, setIsInterrupting] = useState(false)
 
   // Refs for voice chat state
   const recognitionRef = useRef(null)
   const audioContextRef = useRef(null)
   const analyserRef = useRef(null)
   const mediaStreamRef = useRef(null)
+  const animFrameRef = useRef(null)
   const lastSpeechTimeRef = useRef(0)
   const silenceTimeoutRef = useRef(null)
-  const isSpeakingRef = useRef(false) // Sync ref for VAD callback to avoid stale state
-
-  // Refs for interruptible TTS
-  const currentSourceRef = useRef(null)
-  const currentAudioContextRef = useRef(null)
-  const speechSynthesisRef = useRef(null)
   const socketRef = useRef(null)
-  const interruptRef = useRef(null) // Ref to store interrupt function for VAD callback
-const isInterruptingRef = useRef(false) // Flag to skip error handling during intentional interrupt
+  const interruptRef = useRef(null)
+  const isInterruptingRef = useRef(false)
+  // Shared ref for interrupt — set on the hook instance so ChatArea can read it
+  const userStartedSpeakingRef = useRef(false)
+  const isPushingToTalkRef = useRef(false)
+  const isListeningRef = useRef(false)
+  const pendingTranscriptRef = useRef('')
+  const hasSpeechSinceStartRef = useRef(false)
+  const hasTranscribedInCurrentMessageRef = useRef(false)
 
-  // WebRTC-based Voice Activity Detection
+  // WebRTC-based Voice Activity Detection + audio level monitoring
   const setupVAD = useCallback(async () => {
     try {
-      if (!window.isSecureContext) {
-        console.warn('getUserMedia requires HTTPS or localhost context')
-        return false
-      }
-
+      // getUserMedia requires HTTPS or localhost — but the browser enforces this.
+      // We skip the check here so it works on LAN HTTP access too.
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         console.warn('MediaDevices API not supported')
         return false
@@ -43,7 +43,8 @@ const isInterruptingRef = useRef(false) // Flag to skip error handling during in
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true
+          autoGainControl: true,
+          channelCount: 1
         }
       })
       mediaStreamRef.current = stream
@@ -54,14 +55,35 @@ const isInterruptingRef = useRef(false) // Flag to skip error handling during in
       }
 
       const AudioContextClass = window.AudioContext || window.webkitAudioContext
-      audioContextRef.current = new AudioContextClass()
-      const source = audioContextRef.current.createMediaStreamSource(stream)
-      analyserRef.current = audioContextRef.current.createAnalyser()
+      const audioCtx = new AudioContextClass()
+      audioContextRef.current = audioCtx
+      const source = audioCtx.createMediaStreamSource(stream)
+      const analyser = audioCtx.createAnalyser()
 
-      analyserRef.current.fftSize = 256
-      analyserRef.current.smoothingTimeConstant = 0.8
+      analyser.fftSize = 512
+      analyser.smoothingTimeConstant = 0.5
+      source.connect(analyser)
+      analyserRef.current = analyser
 
-      source.connect(analyserRef.current)
+      // Start continuous audio level monitoring via animation frame
+      const monitorLevel = () => {
+        if (!analyserRef.current) return
+        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
+        analyserRef.current.getByteFrequencyData(dataArray)
+
+        // Calculate weighted average (emphasize lower frequencies where speech lives)
+        let sum = 0
+        const weightSum = 0
+        for (let i = 0; i < dataArray.length; i++) {
+          const weight = 1 + (1 - i / dataArray.length) * 2 // Boost lower freqs
+          sum += dataArray[i] * weight
+        }
+        const level = sum / dataArray.length
+
+        setAudioLevel(level)
+        animFrameRef.current = requestAnimationFrame(monitorLevel)
+      }
+      monitorLevel()
 
       return true
     } catch (error) {
@@ -70,28 +92,17 @@ const isInterruptingRef = useRef(false) // Flag to skip error handling during in
     }
   }, [])
 
-  // Check audio level for voice activity
-  const checkAudioLevel = useCallback(() => {
-    if (!analyserRef.current) return false
-
-    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
-    analyserRef.current.getByteFrequencyData(dataArray)
-
-    const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
-    const threshold = 30
-
-    const isSpeech = average > threshold
-    const now = Date.now()
-
-    if (isSpeech) {
-      lastSpeechTimeRef.current = now
+  // Stop audio level monitoring
+  const stopAudioMonitoring = useCallback(() => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current)
+      animFrameRef.current = null
     }
-
-    return isSpeech
+    setAudioLevel(0)
   }, [])
 
   // Browser SpeechRecognition API setup
-  const setupSpeechRecognition = useCallback(() => {
+  const setupSpeechRecognition = useCallback((onFinalTranscript, onInterim) => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
       console.warn('SpeechRecognition API not supported')
@@ -99,7 +110,6 @@ const isInterruptingRef = useRef(false) // Flag to skip error handling during in
     }
 
     const recognition = new SpeechRecognition()
-
     recognition.continuous = true
     recognition.interimResults = true
     recognition.lang = 'en-US'
@@ -116,278 +126,265 @@ const isInterruptingRef = useRef(false) // Flag to skip error handling during in
         const transcript = event.results[i][0].transcript
         if (event.results[i].isFinal) {
           finalTranscript += transcript + ' '
+          // Call the callback with final transcript
+          if (onFinalTranscript) {
+            onFinalTranscript(finalTranscript.trim())
+          }
         } else {
           interimTranscript += transcript
+          // Mark that user has started speaking — triggers interrupt
+          if (transcript.trim()) {
+            if (onInterim) onInterim(transcript.trim())
+          }
         }
       }
 
-      setTranscript(finalTranscript + interimTranscript)
-
-      if (finalTranscript) {
-        setTranscript(finalTranscript.trim())
-      }
+      // Update live transcript (final + interim)
+      const liveTranscript = finalTranscript + interimTranscript
+      // Use requestAnimationFrame to avoid blocking the recognition thread
+      requestAnimationFrame(() => {
+        setTranscript(liveTranscript.trim())
+        pendingTranscriptRef.current = liveTranscript.trim()
+      })
     }
 
     recognition.onerror = (event) => {
       console.error('Speech recognition error:', event.error)
+      const active = isPushingToTalkRef.current || isListening
+      if (event.error === 'no-speech') {
+        // Silently restart for no-speech errors
+        if (active) {
+          try { recognition.start() } catch (e) {}
+        }
+      } else if (event.error === 'not-allowed') {
+        console.warn('Microphone permission denied')
+        setIsListening(false)
+        setIsRecording(false)
+      }
     }
 
     recognition.onend = () => {
       console.log('Speech recognition ended')
-      if (isListening) {
-        recognition.start()
+      // Auto-restart if we should still be listening
+      // Use refs (not state) to avoid stale closures
+      const isPushing = isPushingToTalkRef.current
+      const isContListening = isListeningRef.current
+      if (isPushing || isContListening) {
+        console.log('Auto-restarting speech recognition...')
+        // Chrome sometimes auto-stops continuous recognition.
+        // Restart immediately with retries.
+        let retries = 0
+        const attemptRestart = () => {
+          try {
+            recognition.start()
+            console.log('Speech recognition restarted')
+          } catch (e) {
+            retries++
+            if (retries < 5 && (isPushingToTalkRef.current || isListeningRef.current)) {
+              console.log('Restart failed, retrying...', e.error)
+              setTimeout(attemptRestart, 200)
+            }
+          }
+        }
+        attemptRestart()
       }
     }
 
     return recognition
-  }, [isListening])
+  }, [])
 
-  // Start listening with hybrid VAD + STT
-  const startListening = useCallback(async () => {
+  // Start listening in continuous mode (auto-detect speech, auto-send on silence)
+  const startContinuousListening = useCallback(async (onTranscript) => {
     try {
-      // If currently speaking, interrupt first
-      if (isSpeaking) {
-        interrupt()
-      }
-
       const vadReady = await setupVAD()
       if (!vadReady) {
         throw new Error('Failed to setup voice activity detection')
       }
 
-      const recognition = setupSpeechRecognition()
+      let finalTranscript = ''
+
+      const recognition = setupSpeechRecognition(
+        (finalText) => {
+          finalTranscript = finalText
+          hasSpeechSinceStartRef.current = true
+          hasTranscribedInCurrentMessageRef.current = true
+          lastSpeechTimeRef.current = Date.now()
+
+          // Notify caller when a word/phrase is transcribed (for interrupt)
+          if (onTranscript) {
+            onTranscript(finalText)
+          }
+
+          // Clear any existing silence timeout when speech is detected
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current)
+            silenceTimeoutRef.current = null
+          }
+        },
+        (interimText) => {
+          // Mark that user has started speaking on first interim result
+          // — triggers interrupt immediately, before user finishes talking
+          if (interimText.trim()) {
+            hasTranscribedInCurrentMessageRef.current = true
+            userStartedSpeakingRef.current = true
+          }
+        }
+      )
+
       if (!recognition) {
         throw new Error('SpeechRecognition not supported')
       }
 
       recognitionRef.current = recognition
       recognition.start()
-
       setIsListening(true)
+      isListeningRef.current = true
       setTranscript('')
+      hasSpeechSinceStartRef.current = false
+      hasTranscribedInCurrentMessageRef.current = false
 
-      // Abort any ongoing socket connection when user starts speaking
-      if (socketRef.current) {
-        socketRef.current.emit('abort')
-        socketRef.current.disconnect()
-        socketRef.current = null
-      }
-
-      // Start VAD monitoring
+      // Monitor audio levels for VAD feedback
       const vadInterval = setInterval(() => {
-        if (!isListening) {
-          clearInterval(vadInterval)
-          return
-        }
-
-        const isSpeech = checkAudioLevel()
-        const now = Date.now()
-
-        if (isSpeech) {
-          // Speech detected - clear any existing silence timeout and abort TTS if playing
-          if (silenceTimeoutRef.current) {
-            clearTimeout(silenceTimeoutRef.current)
-            silenceTimeoutRef.current = null
-          }
-          // If TTS is playing, interrupt it when user starts speaking
-          if (isSpeakingRef.current && interruptRef.current) {
-            interruptRef.current()
-          }
-        } else {
-          // Silence detected - set timeout to stop listening after 2 seconds of silence
-          if (!silenceTimeoutRef.current) {
-            silenceTimeoutRef.current = setTimeout(() => {
-              if (isListening) {
-                stopListening()
-              }
-            }, 2000)
-          }
-        }
+        if (!analyserRef.current) return
+        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
+        analyserRef.current.getByteFrequencyData(dataArray)
+        const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
+        setAudioLevel(average)
       }, 100)
 
-      return () => clearInterval(vadInterval)
+      return vadInterval
     } catch (error) {
-      console.error('Failed to start listening:', error)
+      console.error('Failed to start continuous listening:', error)
       setIsListening(false)
+      return null
     }
-  }, [setupVAD, setupSpeechRecognition, checkAudioLevel, isListening])
+  }, [setupVAD, setupSpeechRecognition])
 
-  // Stop listening
-  const stopListening = useCallback(() => {
+  // Start push-to-talk mode (reuses existing AudioContext if available)
+  const startPushToTalk = useCallback(async () => {
+    if (isPushingToTalkRef.current) return
+    isPushingToTalkRef.current = true
+    setIsRecording(true)
+    setTranscript('')
+    hasSpeechSinceStartRef.current = false
+    pendingTranscriptRef.current = ''
+
+    try {
+      // Reuse existing AudioContext if available (from continuous mode)
+      if (!audioContextRef.current) {
+        const vadReady = await setupVAD()
+        if (!vadReady) {
+          isPushingToTalkRef.current = false
+          setIsRecording(false)
+          throw new Error('Failed to setup microphone')
+        }
+      }
+
+      const recognition = setupSpeechRecognition(() => {
+        hasSpeechSinceStartRef.current = true
+      })
+
+      if (!recognition) {
+        isPushingToTalkRef.current = false
+        setIsRecording(false)
+        throw new Error('SpeechRecognition not supported')
+      }
+
+      recognitionRef.current = recognition
+      recognition.start()
+    } catch (error) {
+      console.error('Failed to start push-to-talk:', error)
+      isPushingToTalkRef.current = false
+      setIsRecording(false)
+    }
+  }, [setupVAD, setupSpeechRecognition])
+
+  // Stop push-to-talk and send transcript
+  const stopPushToTalk = useCallback((onSend) => {
+    isPushingToTalkRef.current = false
+    setIsRecording(false)
+
     if (recognitionRef.current) {
       recognitionRef.current.stop()
     }
 
+    // Small delay to let final transcripts come through
+    setTimeout(() => {
+      const finalText = pendingTranscriptRef.current || transcript
+      if (finalText.trim() && onSend) {
+        onSend(finalText.trim())
+      }
+      pendingTranscriptRef.current = ''
+      setTranscript('')
+    }, 300)
+  }, [transcript])
+
+  // Stop all listening
+  const stopListening = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      recognitionRef.current = null
+    }
+
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => track.stop())
+      mediaStreamRef.current = null
     }
 
     if (audioContextRef.current) {
       audioContextRef.current.close()
+      audioContextRef.current = null
     }
 
-    setIsListening(false)
+    if (analyserRef.current) {
+      analyserRef.current = null
+    }
+
+    stopAudioMonitoring()
 
     if (silenceTimeoutRef.current) {
       clearTimeout(silenceTimeoutRef.current)
       silenceTimeoutRef.current = null
     }
-  }, [])
 
-  // Speak with interruptible playback
-  const speak = useCallback(async (text, options = {}) => {
-    // Interrupt any ongoing speech first
-    interrupt()
+    setIsListening(false)
+    isListeningRef.current = false
+    setIsRecording(false)
+    setTranscript('')
+    setAudioLevel(0)
+    hasSpeechSinceStartRef.current = false
+    hasTranscribedInCurrentMessageRef.current = false
+    pendingTranscriptRef.current = ''
+  }, [stopAudioMonitoring])
 
-    try {
-      // Browser TTS uses client-side speechSynthesis
-      if (options.provider === 'browser' || !options.provider) {
-        return new Promise((resolve) => {
-          const utterance = new SpeechSynthesisUtterance(text)
-          utterance.rate = 1.0
-          utterance.pitch = 1.0
-          if (options.voice) {
-            const voices = speechSynthesis.getVoices()
-            const selectedVoice = voices.find(v => v.name === options.voice || v.voiceURI === options.voice)
-            if (selectedVoice) utterance.voice = selectedVoice
-          }
-          utterance.onend = () => {
-            setIsSpeaking(false); isSpeakingRef.current = false
-            speechSynthesisRef.current = null
-            resolve(true)
-          }
- utterance.onerror = (e) => {
-      if (isInterruptingRef.current) {
-        // Intentional interrupt - not a real error
-        speechSynthesisRef.current = null
-        resolve(false)
-        return
-      }
-      console.error('Browser TTS error:', e)
-      setIsSpeaking(false); isSpeakingRef.current = false
-      speechSynthesisRef.current = null
-      resolve(false)
-    }
-          setIsSpeaking(true); isSpeakingRef.current = true
-          speechSynthesisRef.current = utterance
-          speechSynthesis.speak(utterance)
-        })
-      }
-
-      // Server-side TTS (Piper, Coqui) - fallback to browser TTS on failure
-      const response = await fetch('/api/tts/speak', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice_id: options.voice })
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        console.warn('Server TTS failed, falling back to browser TTS:', error.error)
-        return new Promise((resolve) => {
-          const utterance = new SpeechSynthesisUtterance(text)
-          utterance.rate = 1.0
-          utterance.pitch = 1.0
-          utterance.onend = () => {
-            setIsSpeaking(false); isSpeakingRef.current = false
-            speechSynthesisRef.current = null
-            resolve(true)
-          }
- utterance.onerror = (e) => {
-      if (isInterruptingRef.current) {
-        // Intentional interrupt - not a real error
-        speechSynthesisRef.current = null
-        resolve(false)
-        return
-      }
-      console.error('Browser TTS error:', e)
-      setIsSpeaking(false); isSpeakingRef.current = false
-      speechSynthesisRef.current = null
-      resolve(false)
-    }
-          setIsSpeaking(true); isSpeakingRef.current = true
-          speechSynthesisRef.current = utterance
-          speechSynthesis.speak(utterance)
-        })
-      }
-
-      const audioBuffer = await response.arrayBuffer()
-
-      // Play audio with interruptible source
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-      const audioData = await audioContext.decodeAudioData(audioBuffer)
-      const source = audioContext.createBufferSource()
-      source.buffer = audioData
-      source.connect(audioContext.destination)
-
-      // Store refs for interruption
-      currentSourceRef.current = source
-      currentAudioContextRef.current = audioContext
-
-      setIsSpeaking(true); isSpeakingRef.current = true
-
-      return new Promise((resolve) => {
-        source.onended = () => {
-          currentSourceRef.current = null
-          currentAudioContextRef.current = null
-          audioContext.close()
-          setIsSpeaking(false); isSpeakingRef.current = false
-          resolve(true)
-        }
-        source.start()
-      })
-    } catch (error) {
-      console.error('Speech synthesis error:', error)
-      setIsSpeaking(false); isSpeakingRef.current = false
-      currentSourceRef.current = null
-      currentAudioContextRef.current = null
-      return false
-    }
-  }, [])
-
-  // Interrupt current speech - can be called from anywhere
+  // Interrupt current operation
   const interrupt = useCallback(() => {
-    // Stop speechSynthesis if playing
     isInterruptingRef.current = true
-  if (speechSynthesis.speaking) {
-      speechSynthesis.cancel()
-    }
-    speechSynthesisRef.current = null
+    setIsInterrupting(true)
 
-    // Stop AudioBufferSourceNode if playing
-    if (currentSourceRef.current) {
-      try {
-        currentSourceRef.current.stop()
-      } catch (e) {
-        // Ignore if already stopped
-      }
-      currentSourceRef.current = null
+    // Stop speechSynthesis if playing
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel()
     }
 
-    // Close AudioContext if open
-    if (currentAudioContextRef.current) {
-      try {
-        currentAudioContextRef.current.close()
-      } catch (e) {
-        // Ignore if already closed
-      }
-      currentAudioContextRef.current = null
-    }
-
-    setIsSpeaking(false); isSpeakingRef.current = false
+    // Reset interrupt flag after a brief delay
+    setTimeout(() => {
+      isInterruptingRef.current = false
+      setIsInterrupting(false)
+    }, 500)
   }, [])
 
-  // Store interrupt function in ref for use by VAD callback
+  // Store interrupt function in ref
   interruptRef.current = interrupt
 
   // Socket.io connection for WebSocket streaming with abort support
   const connectSocket = useCallback((threadId, callbacks = {}) => {
-    // Disconnect existing socket
     if (socketRef.current) {
       socketRef.current.disconnect()
     }
 
-    const socket = io('http://localhost:4001', {
+    // Use same-origin (proxied through Vite) to avoid mixed-content issues
+    const socket = io(undefined, {
       transports: ['websocket']
     })
 
@@ -403,7 +400,6 @@ const isInterruptingRef = useRef(false) // Flag to skip error handling during in
     })
 
     socket.on('quick_token', (data) => {
-      // Quick answer token for immediate TTS playback
       if (callbacks.onQuickToken) callbacks.onQuickToken(data)
     })
 
@@ -413,36 +409,30 @@ const isInterruptingRef = useRef(false) // Flag to skip error handling during in
 
     socket.on('complete', (data) => {
       if (callbacks.onComplete) callbacks.onComplete(data)
-      setIsSpeaking(false); isSpeakingRef.current = false
     })
 
-    // Also handle stream_* events from Socket.io streaming
     socket.on('stream_complete', (data) => {
       if (callbacks.onComplete) callbacks.onComplete(data)
-      setIsSpeaking(false); isSpeakingRef.current = false
     })
 
     socket.on('stream_error', (data) => {
       if (callbacks.onError) callbacks.onError(data)
-      setIsSpeaking(false); isSpeakingRef.current = false
     })
 
     socket.on('stream_aborted', (data) => {
- console.log('Stream aborted by server')
- if (interruptRef.current) {
-   interruptRef.current()
- }
- setIsSpeaking(false); isSpeakingRef.current = false
- })
+      console.log('Stream aborted by server')
+      if (callbacks.onComplete) callbacks.onComplete({})
+      if (interruptRef.current) {
+        interruptRef.current()
+      }
+    })
 
     socket.on('error', (data) => {
       if (callbacks.onError) callbacks.onError(data)
-      setIsSpeaking(false); isSpeakingRef.current = false
     })
 
     socket.on('abort_ack', () => {
       console.log('Server acknowledged abort')
-      setIsSpeaking(false); isSpeakingRef.current = false
     })
 
     return socket
@@ -463,29 +453,15 @@ const isInterruptingRef = useRef(false) // Flag to skip error handling during in
     return socketRef.current
   }, [])
 
-  const getVoices = useCallback(async () => {
-    try {
-      const response = await fetch('/api/tts/voices')
-      if (response.ok) {
-        const data = await response.json()
-        return data.voices
-      }
-    } catch (error) {
-      console.error('Failed to get voices:', error)
-    }
-    if ('speechSynthesis' in window) {
-      return speechSynthesis.getVoices()
-    }
-    return []
+  // Set voice mode
+  const setVoiceMode = useCallback((mode) => {
+    setVoiceModeState(mode)
   }, [])
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopListening()
-      if (interruptRef.current) {
-        interruptRef.current()
-      }
       if (socketRef.current) {
         socketRef.current.disconnect()
       }
@@ -495,18 +471,27 @@ const isInterruptingRef = useRef(false) // Flag to skip error handling during in
   return {
     // State
     isListening,
-    isSpeaking,
+    isRecording,
     transcript,
-    latency,
+    audioLevel,
+    voiceMode,
+    isInterrupting,
+    userStartedSpeaking: userStartedSpeakingRef.current,
+    userStartedSpeakingRef,
+    resetInterruptFlag: () => {
+      userStartedSpeakingRef.current = false
+      hasTranscribedInCurrentMessageRef.current = false
+    },
 
     // Actions
-    startListening,
+    startListening: startContinuousListening,
+    startPushToTalk,
+    stopPushToTalk,
     stopListening,
-    speak,
     interrupt,
     abortGeneration,
     connectSocket,
     getSocket,
-    getVoices
+    setVoiceMode
   }
 }
