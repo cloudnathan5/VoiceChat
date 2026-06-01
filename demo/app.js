@@ -1,7 +1,7 @@
 // VoiceChat Demo — static, no server required
 // Visual clone of the main app with browser TTS only + SSE streaming
 
-// ─── SVG Icon Component ─────────────────────────────────────────────────────
+// ─── DOM helpers ─────────────────────────────────────────────────────────────
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag)
@@ -10,6 +10,7 @@ function h(tag, attrs, ...children) {
       if (k === 'className') el.className = v
       else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v)
       else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v)
+      else if (k === 'key') return // skip, not a DOM attribute
       else el.setAttribute(k, v)
     })
   }
@@ -17,41 +18,41 @@ function h(tag, attrs, ...children) {
     if (c == null) return
     if (typeof c === 'string' || typeof c === 'number') el.append(String(c))
     else if (c instanceof Node) el.appendChild(c)
+    else if (Array.isArray(c)) c.forEach(x => { if (x != null && x instanceof Node) el.appendChild(x) })
   })
   return el
 }
 
+function svgIcon(d, size = 20, className = '') {
+  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: size, height: size, className },
+    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d })
+  )
+}
+
+const ICONS = {
+  'plus': 'M12 4v16m8-8H4',
+  'x': 'M6 18L18 6M6 6l12 12',
+  'trash-2': 'M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6',
+  'settings': 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+  'message-square': 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z',
+  'send': 'M12 19l9 2-9-18-9 18 9-2zm0 0v-8',
+  'mic': 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z',
+  'volume-2': 'M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z',
+  'volume-x': 'M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2',
+  'stop-circle': 'M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z',
+  'chevron-down': 'M19 9l-7 7-7-7',
+  'refresh-cw': 'M23 4v6h-6M1 20v-6h6 M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15',
+  'radio': 'M4.9 19.1C7.7 21.9 11.9 23.3 16.1 21.9c4.2-1.4 7.3-5.3 7.9-9.7.6-4.4-1.4-8.7-5.1-10.7-1-.6-2.1-.9-3.2-.9 M12 16v-4m0 0l-2 2m2-2l2 2',
+  'hand': 'M18 11V6a2 2 0 00-4 0v1M14 10V4a2 2 0 00-4 0v6m0-6v9M6 10V7a2 2 0 00-4 0v9a2 2 0 004 0v-3m10 0h.01',
+  'copy': 'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z',
+  'user': 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 7a4 4 0 100 8 4 4 0 000-8z',
+  'sun': 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z',
+  'moon': 'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z',
+  'test-tube': 'M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z',
+}
+
 function Icon({ name, size = 20, className = '' }) {
-  const icons = {
-    'plus': 'M12 4v16m8-8H4',
-    'x': 'M6 18L18 6M6 6l12 12',
-    'trash-2': 'M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6',
-    'settings': 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
-    'message-square': 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z',
-    'send': 'M12 19l9 2-9-18-9 18 9-2zm0 0v-8',
-    'mic': 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z',
-    'volume-2': 'M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z',
-    'volume-x': 'M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2',
-    'stop-circle': 'M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z',
-    'chevron-down': 'M19 9l-7 7-7-7',
-    'refresh-cw': 'M23 4v6h-6M1 20v-6h6 M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15',
-    'radio': 'M4.9 19.1C7.7 21.9 11.9 23.3 16.1 21.9c4.2-1.4 7.3-5.3 7.9-9.7.6-4.4-1.4-8.7-5.1-10.7-1-.6-2.1-.9-3.2-.9 M12 16v-4m0 0l-2 2m2-2l2 2',
-    'hand': 'M18 11V6a2 2 0 00-4 0v1M14 10V4a2 2 0 00-4 0v6m0-6v9M6 10V7a2 2 0 00-4 0v9a2 2 0 004 0v-3m10 0h.01',
-    'copy': 'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z',
-    'user': 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 7a4 4 0 100 8 4 4 0 000-8z',
-    'sun': 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z',
-    'moon': 'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z',
-    'test-tube': 'M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z',
-  }
-  const d = icons[name] || ''
-  return h('svg', {
-    fill: 'none',
-    stroke: 'currentColor',
-    viewBox: '0 0 24 24',
-    width: size,
-    height: size,
-    className: className
-  }, h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: d }))
+  return svgIcon(ICONS[name] || '', size, className)
 }
 
 // ─── Waveform Component ──────────────────────────────────────────────────────
@@ -500,13 +501,13 @@ setInterval(() => {
 
 // ─── Message Bubble Component ────────────────────────────────────────────────
 
-function MessageBubble({ message }) {
+function MessageBubble(message) {
   const isUser = message.role === 'user'
 
   const header = h('div', { className: 'flex items-center justify-between mb-2' },
     h('div', { className: 'flex items-center space-x-2' },
       h('div', { className: `w-6 h-6 rounded-full flex items-center justify-center ${isUser ? 'bg-blue-700' : 'bg-gray-700'}` },
-        isUser ? h(Icon, { name: 'user', size: 12, className: 'text-white' }) : h('div', { className: 'w-2 h-2 bg-gray-600 rounded-full' })
+        isUser ? Icon({ name: 'user', size: 12, className: 'text-white' }) : h('div', { className: 'w-2 h-2 bg-gray-600 rounded-full' })
       ),
       h('span', { className: 'text-sm font-medium text-gray-300' }, isUser ? 'You' : 'AI')
     ),
@@ -514,46 +515,53 @@ function MessageBubble({ message }) {
       h('button', {
         className: 'p-1 rounded transition-colors hover:bg-gray-700 text-gray-400',
         onClick: () => navigator.clipboard.writeText(message.content)
-      }, h(Icon, { name: 'copy', size: 12 }))
+      }, Icon({ name: 'copy', size: 12 }))
     )
   )
 
   const timeStr = new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   const timeEl = h('span', { className: 'text-xs text-gray-400' }, timeStr)
 
-  const contentEl = h('div', { className: 'max-w-none' },
-    h('div', { className: 'text-sm leading-relaxed' },
-      message.isStreaming
-        ? h('div', null,
-            message.thinking && h('div', { className: 'mb-2 p-2 bg-yellow-100/20 border border-yellow-500/30 rounded text-yellow-300/80 text-xs italic whitespace-pre-wrap' },
-              '💭 ' + message.thinking
-            ),
-            message.content && message.content.length > 0
-              ? h('div', { className: 'mb-2 whitespace-pre-wrap' },
-                  ...message.content.split('\n').map((line, i) => [
-                    document.createTextNode(line),
-                    i < message.content.split('\n').length - 1 ? h('br') : null
-                  ])
-              ) : null,
-            h('div', { className: 'flex items-center space-x-2' },
-              h('div', { className: 'flex space-x-1' },
-                [1, 2, 3].map(i => h('div', {
-                  key: i,
-                  className: 'w-1 bg-gray-400 rounded-full animate-pulse',
-                  style: { height: `${Math.random() * 8 + 4}px`, animationDelay: `${i * 0.1}s` }
-                }))
-              ),
-              h('span', { className: 'text-gray-500' }, 'Thinking...')
-            )
-          )
-        : h('div', { className: 'whitespace-pre-wrap' },
-            ...message.content.split('\n').map((line, i) => [
-              document.createTextNode(line),
-              i < message.content.split('\n').length - 1 ? h('br') : null
-            ])
-          )
+  // Build content children
+  const contentChildren = []
+  if (message.isStreaming) {
+    if (message.thinking) {
+      contentChildren.push(
+        h('div', { className: 'mb-2 p-2 bg-yellow-100/20 border border-yellow-500/30 rounded text-yellow-300/80 text-xs italic whitespace-pre-wrap' },
+          '💭 ' + message.thinking
+        )
+      )
+    }
+    if (message.content && message.content.length > 0) {
+      const lines = message.content.split('\n')
+      const children = []
+      lines.forEach((line, i) => {
+        children.push(document.createTextNode(line))
+        if (i < lines.length - 1) children.push(h('br'))
+      })
+      contentChildren.push(h('div', { className: 'mb-2 whitespace-pre-wrap' }, ...children))
+    }
+    contentChildren.push(
+      h('div', { className: 'flex items-center space-x-2' },
+        h('div', { className: 'flex space-x-1' },
+          [1, 2, 3].map(i => h('div', {
+            key: i,
+            className: 'w-1 bg-gray-400 rounded-full animate-pulse',
+            style: { height: `${Math.random() * 8 + 4}px`, animationDelay: `${i * 0.1}s` }
+          }))
+        ),
+        h('span', { className: 'text-gray-500' }, 'Thinking...')
+      )
     )
-  )
+  } else {
+    const lines = message.content.split('\n')
+    const children = []
+    lines.forEach((line, i) => {
+      children.push(document.createTextNode(line))
+      if (i < lines.length - 1) children.push(h('br'))
+    })
+    contentChildren.push(h('div', { className: 'whitespace-pre-wrap' }, ...children))
+  }
 
   const bubbleClass = isUser
     ? 'bg-blue-600 text-white'
@@ -563,7 +571,9 @@ function MessageBubble({ message }) {
     h('div', { className: `max-w-[80%] rounded-lg p-4 relative ${bubbleClass}` },
       header,
       timeEl,
-      contentEl
+      h('div', { className: 'max-w-none' },
+        h('div', { className: 'text-sm leading-relaxed' }, ...contentChildren)
+      )
     )
   )
 }
@@ -587,17 +597,17 @@ function App() {
           h('button', {
             className: 'p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800',
             onClick: () => { state.isCollapsed = !state.isCollapsed; render() }
-          }, h(Icon, { name: state.isCollapsed ? 'plus' : 'x', size: 20 })),
+          }, Icon({ name: state.isCollapsed ? 'plus' : 'x', size: 20 })),
           !state.isCollapsed && h('button', {
             className: 'p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800',
             onClick: () => { state.darkMode = !state.darkMode; render() }
-          }, h(Icon, { name: 'sun', size: 20 }))
+          }, Icon({ name: 'sun', size: 20 }))
         )
       ),
       !state.isCollapsed && h('button', {
         className: 'w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors font-medium',
         onClick: handleNewThread
-      }, h(Icon, { name: 'plus', size: 16 }), 'New Chat')
+      }, Icon({ name: 'plus', size: 16 }), 'New Chat')
     ),
 
     h('div', { className: 'flex-1 overflow-y-auto scrollbar-hide' },
@@ -606,7 +616,7 @@ function App() {
           key: t.id,
           className: `w-full p-2 rounded-lg flex items-center justify-center transition-colors ${state.activeThread?.id === t.id ? 'bg-gray-800 text-blue-400' : 'text-gray-400 hover:bg-gray-800'}`,
           onClick: () => { state.activeThread = t; render() }
-        }, h(Icon, { name: 'message-square', size: 16 })))
+        }, Icon({ name: 'message-square', size: 16 })))
       ) : state.threads.length === 0
         ? h('div', { className: 'p-8 text-center text-gray-400' },
             h('div', { className: 'text-gray-400 text-sm' }, 'No conversations yet')
@@ -629,7 +639,7 @@ function App() {
               h('button', {
                 className: 'p-1 rounded transition-colors hover:bg-red-900 text-red-400',
                 onClick: (e) => { e.stopPropagation(); handleDeleteThread(thread.id) }
-              }, h(Icon, { name: 'trash-2', size: 14 }))
+              }, Icon({ name: 'trash-2', size: 14 }))
             )
           ))
     )
@@ -655,18 +665,18 @@ function App() {
                   }))
                 ),
                 h('span', { className: 'text-xs text-cyan-600' }, 'Speaking...'),
-                h('button', { onClick: stopTts, className: 'p-1 rounded hover:bg-cyan-500/30 text-cyan-600' }, h(Icon, { name: 'volume-x', size: 14 }))
+                h('button', { onClick: stopTts, className: 'p-1 rounded hover:bg-cyan-500/30 text-cyan-600' }, Icon({ name: 'volume-x', size: 14 }))
               ),
               isVoiceActiveState && h('div', { className: 'flex items-center gap-3 px-3 py-2 rounded-full bg-orange-100' },
                 h('div', { className: 'flex items-center gap-2' },
                   h('div', { className: 'w-2 h-2 bg-red-500 rounded-full animate-pulse' }),
                   h('span', { className: 'text-xs font-medium text-orange-600' }, state.isRecording ? 'Recording...' : 'Listening...')
                 ),
-                showWaveform && h('div', { className: 'flex items-center' }, h(WaveformBars, { level: state.audioLevel, isActive: true })),
+                showWaveform && h('div', { className: 'flex items-center' }, WaveformBars({ level: state.audioLevel, isActive: true })),
                 h('button', {
                   onClick: handleVoiceChat,
                   className: 'p-1 rounded-full hover:bg-red-500/30 text-red-600'
-                }, h(Icon, { name: 'stop-circle', size: 16 }))
+                }, Icon({ name: 'stop-circle', size: 16 }))
               )
             )
           )
@@ -676,7 +686,7 @@ function App() {
         h('div', { className: 'flex-1 min-h-0 overflow-y-auto scrollable-messages bg-gray-50' },
           h('div', { className: 'px-6 py-4 min-h-full' },
             h('div', { className: 'max-w-4xl mx-auto space-y-4' },
-              ...threadMessages.map(m => h(MessageBubble, { key: m.id, message: m })),
+              ...threadMessages.map(m => MessageBubble(m)),
               state.isStreaming && h('div', { className: 'flex justify-start' },
                 h('div', { className: 'max-w-[80%] rounded-lg p-4 bg-gray-800 border border-gray-700 text-white' },
                   h('div', { className: 'flex items-center space-x-2' },
@@ -691,137 +701,3 @@ function App() {
                   )
                 )
               )
-            )
-          )
-        ),
-
-        // Input Area
-        h('div', { className: 'border-t px-6 py-4 flex-shrink-0 border-gray-200 bg-white' },
-          h('div', { className: 'max-w-4xl mx-auto' },
-            h('div', { className: 'flex items-center gap-3 mb-3' },
-              h('div', { className: 'relative flex-1 max-w-[180px]' },
-                h('select', {
-                  className: 'w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900',
-                  onChange: (e) => { state.selectedProvider = e.target.value; render() },
-                  value: state.selectedProvider
-                }, ...state.providers.map(p => h('option', { key: p.id, value: p.id }, p.name))),
-                h(Icon, { name: 'chevron-down', size: 14, className: 'absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400' })
-              ),
-              h('div', { className: 'relative flex-1 max-w-[180px]' },
-                h('select', {
-                  className: 'w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 bg-white border-gray-300 text-gray-900',
-                  onChange: (e) => { state.selectedModel = e.target.value; render() },
-                  value: state.selectedModel,
-                  disabled: !state.selectedProvider
-                },
-                  h('option', { value: '' }, 'Model'),
-                  ...(provider?.models || []).map(m => h('option', { key: m.id, value: m.id }, m.name))
-                ),
-                h(Icon, { name: 'chevron-down', size: 14, className: 'absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400' })
-              ),
-              h('button', { className: 'p-2 rounded-lg transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300', title: 'Refresh Models' }, h(Icon, { name: 'refresh-cw', size: 16 })),
-              state.isVoiceActive && h('div', { className: 'flex items-center gap-1' },
-                h('button', {
-                  onClick: () => { state.voiceMode = 'continuous'; render() },
-                  className: `p-1.5 rounded transition-colors ${state.voiceMode === 'continuous' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300'}`
-                }, h(Icon, { name: 'radio', size: 14 })),
-                h('button', {
-                  onClick: () => { state.voiceMode = 'push-to-talk'; render() },
-                  className: `p-1.5 rounded transition-colors ${state.voiceMode === 'push-to-talk' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300'}`
-                }, h(Icon, { name: 'hand', size: 14 }))
-              ),
-              state.voiceMode === 'push-to-talk' && state.isVoiceActive
-                ? h('button', {
-                    className: `p-2 rounded-lg transition-colors relative ${state.isRecording ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-orange-600/30 text-orange-400 border border-orange-500/50'}`
-                  },
-                    h(Icon, { name: 'mic', size: 16 }),
-                    state.isRecording && h('span', { className: 'absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse' })
-                  )
-                : h('button', {
-                    onClick: handleVoiceChat,
-                    className: `p-2 rounded-lg transition-colors relative ${isVoiceActiveState ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'}`
-                  },
-                    h(Icon, { name: 'mic', size: 16 }),
-                    isVoiceActiveState && h('span', { className: 'absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse' })
-                  ),
-              h('button', {
-                onClick: () => { state.ttsEnabled = !state.ttsEnabled; render() },
-                className: `p-2 rounded-lg transition-colors ${
-                  state.ttsEnabled && !state.ttsMuted ? 'bg-cyan-500 hover:bg-cyan-600 text-white'
-                  : state.ttsEnabled && state.ttsMuted ? 'bg-amber-100 hover:bg-amber-200 text-amber-600'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
-                }`
-              }, state.ttsEnabled ? (state.ttsMuted ? h(Icon, { name: 'volume-x', size: 18 }) : h(Icon, { name: 'volume-2', size: 18 })) : h(Icon, { name: 'settings', size: 18, className: 'opacity-50' }))
-            ),
-
-            h('div', { className: 'flex items-end space-x-3' },
-              h('div', { className: 'flex-1 relative' },
-                h('textarea', {
-                  className: `w-full border rounded-lg p-3 pr-24 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] max-h-[120px] transition-all bg-white border-gray-300 text-gray-900 placeholder-gray-500 ${isVoiceActiveState ? (state.isRecording ? 'border-orange-500 ring-2 ring-orange-500/20' : 'border-red-500 ring-2 ring-red-500/20') : ''}`,
-                  value: state.inputText,
-                  onInput: (e) => { state.inputText = e.target.value; render() },
-                  onKeyDown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } },
-                  placeholder: isVoiceActiveState ? (state.voiceMode === 'push-to-talk' ? (state.isRecording ? 'Speak now... (release to send)' : 'Hold mic button to record') : (state.isRecording ? 'Speak now...' : 'Listening...')) : 'Type your message...',
-                  rows: 1,
-                  disabled: isVoiceActiveState && !state.isRecording
-                }),
-                isVoiceActiveState && h('div', { className: 'absolute top-2 right-2 flex items-center space-x-2' },
-                  state.audioLevel > 0 && h('div', { className: 'flex items-center gap-0.5' },
-                    h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: `${Math.min(20, state.audioLevel / 5)}px` } }),
-                    h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: `${Math.min(20, state.audioLevel / 4)}px`, animationDelay: '0.1s' } }),
-                    h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: `${Math.min(20, state.audioLevel / 3)}px`, animationDelay: '0.2s' } })
-                  ),
-                  h('span', { className: 'text-xs text-orange-600' }, state.isRecording ? 'Recording...' : 'Listening...')
-                ),
-                state.selectedProvider && !isVoiceActiveState && h('div', { className: 'absolute bottom-2 right-2 flex items-center space-x-2' },
-                  h('span', { className: 'text-xs px-2 py-1 rounded text-gray-500 bg-gray-100' },
-                    (state.providers.find(p => p.id === state.selectedProvider)?.name || 'Provider') +
-                    (state.selectedModel && ' • ' + (provider?.models?.find(m => m.id === state.selectedModel)?.name || 'Model'))
-                  )
-                )
-              ),
-              h('button', {
-                onClick: handleSendMessage,
-                disabled: !state.inputText.trim() || state.isLoading,
-                className: 'p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors'
-              }, h(Icon, { name: 'send', size: 18 }))
-            ),
-
-            isVoiceActiveState && h('div', { className: 'mt-2 text-center text-xs text-gray-400' },
-              state.voiceMode === 'push-to-talk' ? 'Hold mic button to record • Release to send' : 'Speak to send • Auto-sends after 1.5s silence'
-            )
-          )
-        )
-      )
-    : h('div', { className: 'flex-1 flex items-center justify-center bg-gray-900' },
-        h('div', { className: 'text-center max-w-md px-6' },
-          h('div', { className: 'w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-gray-800' },
-            h('svg', { className: 'text-blue-400', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 32, height: 32 },
-              h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' })
-            )
-          ),
-          h('h1', { className: 'text-2xl font-semibold mb-2' }, 'VoiceChat'),
-          h('p', { className: 'mb-6 text-gray-400' }, 'Select a conversation or create a new one to start chatting with AI'),
-          h('button', {
-            onClick: handleNewThread,
-            className: 'bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors'
-          }, 'Create New Chat')
-        )
-      )
-
-  return h('div', { className: 'flex h-screen bg-black text-white' },
-    sidebar,
-    h('div', { className: 'flex-1 flex flex-col min-w-0' }, mainContent)
-  )
-}
-
-// ─── Render ──────────────────────────────────────────────────────────────────
-
-function render() {
-  const root = document.getElementById('root')
-  root.innerHTML = ''
-  root.appendChild(App())
-}
-
-// Initial render
-render()
