@@ -1,73 +1,81 @@
 // VoiceChat Demo — static, no server required
 // Visual clone of the main app with browser TTS only + SSE streaming
 
-// ─── SVG Icon Components ─────────────────────────────────────────────────────
+// ─── SVG Icon Component ─────────────────────────────────────────────────────
 
-function Icon({ name, size = 20, className = '', ...props }) {
-  const icons = {
-    'plus': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />,
-    'x': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />,
-    'trash-2': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6" />,
-    'settings': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />,
-    'message-square': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />,
-    'send': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />,
-    'mic': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />,
-    'volume-2': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />,
-    'volume-x': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />,
-    'stop-circle': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />,
-    'chevron-down': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />,
-    'refresh-cw': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M23 4v6h-6M1 20v-6h6" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />,
-    'radio': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.9 19.1C7.7 21.9 11.9 23.3 16.1 21.9c4.2-1.4 7.3-5.3 7.9-9.7.6-4.4-1.4-8.7-5.1-10.7-1-.6-2.1-.9-3.2-.9" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16v-4m0 0l-2 2m2-2l2 2" />,
-    'hand': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 11V6a2 2 0 00-4 0v1M14 10V4a2 2 0 00-4 0v6m0-6v9M6 10V7a2 2 0 00-4 0v9a2 2 0 004 0v-3m10 0h.01" />,
-    'copy': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />,
-    'user': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" />,
-    'sun': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />,
-    'moon': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />,
-    'test-tube': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />,
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag)
+  if (attrs) {
+    Object.entries(attrs).forEach(([k, v]) => {
+      if (k === 'className') el.className = v
+      else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v)
+      else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v)
+      else el.setAttribute(k, v)
+    })
   }
-  return (
-    <svg
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      width={size}
-      height={size}
-      className={className}
-      {...props}
-    >
-      {icons[name] || null}
-    </svg>
-  )
+  children.flat().forEach(c => {
+    if (c == null) return
+    if (typeof c === 'string' || typeof c === 'number') el.append(String(c))
+    else if (c instanceof Node) el.appendChild(c)
+  })
+  return el
+}
+
+function Icon({ name, size = 20, className = '' }) {
+  const icons = {
+    'plus': 'M12 4v16m8-8H4',
+    'x': 'M6 18L18 6M6 6l12 12',
+    'trash-2': 'M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6',
+    'settings': 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+    'message-square': 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z',
+    'send': 'M12 19l9 2-9-18-9 18 9-2zm0 0v-8',
+    'mic': 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z',
+    'volume-2': 'M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z',
+    'volume-x': 'M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2',
+    'stop-circle': 'M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z',
+    'chevron-down': 'M19 9l-7 7-7-7',
+    'refresh-cw': 'M23 4v6h-6M1 20v-6h6 M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15',
+    'radio': 'M4.9 19.1C7.7 21.9 11.9 23.3 16.1 21.9c4.2-1.4 7.3-5.3 7.9-9.7.6-4.4-1.4-8.7-5.1-10.7-1-.6-2.1-.9-3.2-.9 M12 16v-4m0 0l-2 2m2-2l2 2',
+    'hand': 'M18 11V6a2 2 0 00-4 0v1M14 10V4a2 2 0 00-4 0v6m0-6v9M6 10V7a2 2 0 00-4 0v9a2 2 0 004 0v-3m10 0h.01',
+    'copy': 'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z',
+    'user': 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M12 7a4 4 0 100 8 4 4 0 000-8z',
+    'sun': 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z',
+    'moon': 'M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z',
+    'test-tube': 'M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z',
+  }
+  const d = icons[name] || ''
+  return h('svg', {
+    fill: 'none',
+    stroke: 'currentColor',
+    viewBox: '0 0 24 24',
+    width: size,
+    height: size,
+    className: className
+  }, h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: d }))
 }
 
 // ─── Waveform Component ──────────────────────────────────────────────────────
 
 function WaveformBars({ level, isActive }) {
   const barCount = 24
-  const bars = []
+  const container = h('div', { className: 'flex items-end justify-center gap-0.5 h-10' })
   for (let i = 0; i < barCount; i++) {
     const waveOffset = Math.sin((i / barCount) * Math.PI * 2) * 0.5 + 0.5
     const barHeight = Math.max(4, (level / 128) * 40 * waveOffset + 4)
-    bars.push(
-      <div
-        key={i}
-        className={`rounded-full transition-all ${
-          isActive
-            ? level > 20
-              ? 'bg-orange-500'
-              : 'bg-red-500/50'
-            : 'bg-gray-600'
-        }`}
-        style={{
-          width: '3px',
-          height: `${barHeight}px`,
-          transitionDelay: `${i / barCount * 0.3}s`,
-          transitionDuration: '100ms'
-        }}
-      />
-    )
+    const barClass = isActive
+      ? (level > 20 ? 'bg-orange-500' : 'bg-red-500/50')
+      : 'bg-gray-600'
+    container.appendChild(h('div', {
+      className: `rounded-full transition-all ${barClass}`,
+      style: {
+        width: '3px',
+        height: `${barHeight}px`,
+        transitionDelay: `${i / barCount * 0.3}s`,
+        transitionDuration: '100ms'
+      }
+    }))
   }
-  return <div className="flex items-end justify-center gap-0.5 h-10">{bars}</div>
+  return container
 }
 
 // ─── State ───────────────────────────────────────────────────────────────────
@@ -109,8 +117,7 @@ const state = {
   isAddingProvider: false,
   isTesting: false,
   isCollapsed: false,
-  inputText: '',
-  formData: { name: '', baseUrl: '', apiKey: '' }
+  inputText: ''
 }
 
 function getMessages(threadId) {
@@ -185,7 +192,6 @@ async function streamResponse(threadId, userMessage, onToken, onComplete, onErro
 
 const synth = typeof window !== 'undefined' ? window.speechSynthesis : null
 let currentUtterance = null
-let isSpeaking = false
 
 function speak(text) {
   if (!synth || !text.trim() || state.ttsMuted) return
@@ -197,7 +203,8 @@ function speak(text) {
   let index = 0
   const speakNext = () => {
     if (index >= sentences.length || state.ttsMuted) {
-      isSpeaking = false
+      state.isSpeaking = false
+      render()
       return
     }
     currentUtterance = new SpeechSynthesisUtterance(sentences[index])
@@ -209,11 +216,13 @@ function speak(text) {
       setTimeout(speakNext, 50)
     }
     currentUtterance.onerror = () => {
-      isSpeaking = false
+      state.isSpeaking = false
+      render()
     }
 
     synth.speak(currentUtterance)
-    isSpeaking = true
+    state.isSpeaking = true
+    render()
   }
   speakNext()
 }
@@ -221,7 +230,6 @@ function speak(text) {
 function stopTts() {
   if (synth) synth.cancel()
   currentUtterance = null
-  isSpeaking = false
   state.isSpeaking = false
   render()
 }
@@ -396,10 +404,9 @@ function handleSendMessage() {
       }
       render()
 
-      // TTS streaming — speak as we get tokens
+      // TTS streaming
       if (ttsEnabled && !ttsMuted) {
         ttsQueue = fullContent
-        // Speak sentences that are complete
         const sentences = ttsQueue.split(/(?<=[.!?])\s+/)
         sentences.forEach(s => speak(s))
       }
@@ -417,7 +424,7 @@ function handleSendMessage() {
       state.isLoading = false
       state.isStreaming = false
 
-      // Complete TTS — speak remaining partial content
+      // Complete TTS
       if (ttsEnabled && !ttsMuted && completeContent.trim()) {
         speak(completeContent)
       }
@@ -444,7 +451,6 @@ function handleVoiceChat() {
     stopListening()
     state.isVoiceActive = false
   } else {
-    // Auto-enable TTS when entering voice mode
     if (!state.ttsEnabled) {
       state.ttsEnabled = true
       render()
@@ -497,96 +503,68 @@ setInterval(() => {
 function MessageBubble({ message }) {
   const isUser = message.role === 'user'
 
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
-      <div className={`max-w-[80%] rounded-lg p-4 relative ${
-        isUser
-          ? 'bg-blue-600 text-white'
-          : 'bg-gray-800 border border-gray-700 text-white'
-      }`}>
-        {/* Header */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center space-x-2">
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
-              isUser ? 'bg-blue-700' : 'bg-gray-700'
-            }`}>
-              {isUser ? (
-                <Icon name="user" size={12} className="text-white" />
-              ) : (
-                <div className="w-2 h-2 bg-gray-600 rounded-full"></div>
-              )}
-            </div>
-            <span className="text-sm font-medium text-gray-300">
-              {isUser ? 'You' : 'AI'}
-            </span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <button
-              className="p-1 rounded transition-colors hover:bg-gray-700 text-gray-400"
-              onClick={() => navigator.clipboard.writeText(message.content)}
-              title="Copy message"
-            >
-              <Icon name="copy" size={12} />
-            </button>
-            <span className="text-xs text-gray-400">
-              {new Date(message.createdAt).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit'
-              })}
-            </span>
-          </div>
-        </div>
+  const header = h('div', { className: 'flex items-center justify-between mb-2' },
+    h('div', { className: 'flex items-center space-x-2' },
+      h('div', { className: `w-6 h-6 rounded-full flex items-center justify-center ${isUser ? 'bg-blue-700' : 'bg-gray-700'}` },
+        isUser ? h(Icon, { name: 'user', size: 12, className: 'text-white' }) : h('div', { className: 'w-2 h-2 bg-gray-600 rounded-full' })
+      ),
+      h('span', { className: 'text-sm font-medium text-gray-300' }, isUser ? 'You' : 'AI')
+    ),
+    h('div', { className: 'flex items-center space-x-2' },
+      h('button', {
+        className: 'p-1 rounded transition-colors hover:bg-gray-700 text-gray-400',
+        onClick: () => navigator.clipboard.writeText(message.content)
+      }, h(Icon, { name: 'copy', size: 12 }))
+    )
+  )
 
-        {/* Content */}
-        <div className="max-w-none">
-          <div className="text-sm leading-relaxed">
-            {message.isStreaming ? (
-              <div>
-                {message.thinking && (
-                  <div className="mb-2 p-2 bg-yellow-100/20 border border-yellow-500/30 rounded text-yellow-300/80 text-xs italic whitespace-pre-wrap">
-                    💭 {message.thinking}
-                  </div>
-                )}
-                {message.content && message.content.length > 0 && (
-                  <div className="mb-2 whitespace-pre-wrap">
-                    {message.content.split('\n').map((line, i) => (
-                      <span key={i}>
-                        {line}
-                        {i < message.content.split('\n').length - 1 && <br />}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <div className="flex items-center space-x-2">
-                  <div className="flex space-x-1">
-                    {[1, 2, 3].map(i => (
-                      <div
-                        key={i}
-                        className="w-1 bg-gray-400 rounded-full animate-pulse"
-                        style={{
-                          height: `${Math.random() * 8 + 4}px`,
-                          animationDelay: `${i * 0.1}s`
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <span className="text-gray-500">Thinking...</span>
-                </div>
-              </div>
-            ) : (
-              <div className="whitespace-pre-wrap">
-                {message.content.split('\n').map((line, i) => (
-                  <span key={i}>
-                    {line}
-                    {i < message.content.split('\n').length - 1 && <br />}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+  const timeStr = new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const timeEl = h('span', { className: 'text-xs text-gray-400' }, timeStr)
+
+  const contentEl = h('div', { className: 'max-w-none' },
+    h('div', { className: 'text-sm leading-relaxed' },
+      message.isStreaming
+        ? h('div', null,
+            message.thinking && h('div', { className: 'mb-2 p-2 bg-yellow-100/20 border border-yellow-500/30 rounded text-yellow-300/80 text-xs italic whitespace-pre-wrap' },
+              '💭 ' + message.thinking
+            ),
+            message.content && message.content.length > 0
+              ? h('div', { className: 'mb-2 whitespace-pre-wrap' },
+                  ...message.content.split('\n').map((line, i) => [
+                    document.createTextNode(line),
+                    i < message.content.split('\n').length - 1 ? h('br') : null
+                  ])
+              ) : null,
+            h('div', { className: 'flex items-center space-x-2' },
+              h('div', { className: 'flex space-x-1' },
+                [1, 2, 3].map(i => h('div', {
+                  key: i,
+                  className: 'w-1 bg-gray-400 rounded-full animate-pulse',
+                  style: { height: `${Math.random() * 8 + 4}px`, animationDelay: `${i * 0.1}s` }
+                }))
+              ),
+              h('span', { className: 'text-gray-500' }, 'Thinking...')
+            )
+          )
+        : h('div', { className: 'whitespace-pre-wrap' },
+            ...message.content.split('\n').map((line, i) => [
+              document.createTextNode(line),
+              i < message.content.split('\n').length - 1 ? h('br') : null
+            ])
+          )
+    )
+  )
+
+  const bubbleClass = isUser
+    ? 'bg-blue-600 text-white'
+    : 'bg-gray-800 border border-gray-700 text-white'
+
+  return h('div', { className: `flex ${isUser ? 'justify-end' : 'justify-start'} mb-4` },
+    h('div', { className: `max-w-[80%] rounded-lg p-4 relative ${bubbleClass}` },
+      header,
+      timeEl,
+      contentEl
+    )
   )
 }
 
@@ -598,414 +576,242 @@ function App() {
   const showWaveform = isVoiceActiveState && state.audioLevel > 0
   const provider = state.providers.find(p => p.id === state.selectedProvider)
 
-  return (
-    <div className="flex h-screen bg-black text-white">
-      {/* Sidebar */}
-      <div className={`${state.isCollapsed ? 'w-16' : 'w-80'} border-r border-gray-800 bg-gray-900 flex flex-col transition-all duration-300`}>
-        <div className="p-6 border-b border-gray-800">
-          <div className="flex items-center justify-between">
-            {!state.isCollapsed && (
-              <h1 className="text-xl font-bold">VoiceChat</h1>
-            )}
-            <div className="flex items-center gap-2">
-              <button
-                className="p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
-                title={state.isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                onClick={() => { state.isCollapsed = !state.isCollapsed; render() }}
-              >
-                {state.isCollapsed ? <Icon name="plus" size={20} /> : <Icon name="x" size={20} />}
-              </button>
-              {!state.isCollapsed && (
-                <>
-                  <button
-                    className="p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
-                    title="Switch to light mode"
-                    onClick={() => { state.darkMode = !state.darkMode; render() }}
-                  >
-                    <Icon name="sun" size={20} />
-                  </button>
-                  <button
-                    className="p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
-                    title="Settings"
-                    onClick={() => { state.showTtsMenu = !state.showTtsMenu; render() }}
-                  >
-                    <Icon name="settings" size={20} />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-          {!state.isCollapsed && (
-            <button
-              onClick={handleNewThread}
-              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors font-medium"
-            >
-              <Icon name="plus" size={16} /> New Chat
-            </button>
-          )}
-        </div>
+  // Sidebar
+  const sidebar = h('div', {
+    className: `${state.isCollapsed ? 'w-16' : 'w-80'} border-r border-gray-800 bg-gray-900 flex flex-col transition-all duration-300`
+  },
+    h('div', { className: 'p-6 border-b border-gray-800' },
+      h('div', { className: 'flex items-center justify-between' },
+        !state.isCollapsed && h('h1', { className: 'text-xl font-bold' }, 'VoiceChat'),
+        h('div', { className: 'flex items-center gap-2' },
+          h('button', {
+            className: 'p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800',
+            onClick: () => { state.isCollapsed = !state.isCollapsed; render() }
+          }, h(Icon, { name: state.isCollapsed ? 'plus' : 'x', size: 20 })),
+          !state.isCollapsed && h('button', {
+            className: 'p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800',
+            onClick: () => { state.darkMode = !state.darkMode; render() }
+          }, h(Icon, { name: 'sun', size: 20 }))
+        )
+      ),
+      !state.isCollapsed && h('button', {
+        className: 'w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors font-medium',
+        onClick: handleNewThread
+      }, h(Icon, { name: 'plus', size: 16 }), 'New Chat')
+    ),
 
-        <div className="flex-1 overflow-y-auto scrollbar-hide">
-          {state.isCollapsed ? (
-            <div className="p-4 space-y-2">
-              {state.threads.slice(0, 5).map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => { state.activeThread = t; render() }}
-                  className={`w-full p-2 rounded-lg flex items-center justify-center transition-colors ${
-                    state.activeThread?.id === t.id ? 'bg-gray-800 text-blue-400' : 'text-gray-400 hover:bg-gray-800'
-                  }`}
-                  title={t.title}
-                >
-                  <Icon name="message-square" size={16} />
-                </button>
-              ))}
-            </div>
-          ) : (
-            state.threads.length === 0 ? (
-              <div className="p-8 text-center text-gray-400">
-                <Icon name="message-square" size={48} className="mx-auto mb-4 opacity-50" />
-                <p className="text-sm">No conversations yet</p>
-              </div>
-            ) : (
-              state.threads.map(thread => (
-                <div
-                  key={thread.id}
-                  onClick={() => { state.activeThread = thread; render() }}
-                  className={`p-4 border-b border-gray-800 cursor-pointer transition-colors ${
-                    state.activeThread?.id === thread.id
-                      ? 'bg-gray-800 border-l-4 border-blue-500'
-                      : 'hover:bg-gray-800'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate text-sm">{thread.title}</div>
-                      {thread.providerName && (
-                        <div className="text-xs truncate mt-1 text-gray-400">{thread.providerName}</div>
-                      )}
-                      <div className="text-xs mt-1 text-gray-500">
-                        {thread.updatedAt && !isNaN(new Date(thread.updatedAt))
-                          ? new Date(thread.updatedAt).toLocaleDateString()
-                          : 'Just now'}
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteThread(thread.id) }}
-                      className="p-1 rounded transition-colors hover:bg-red-900 text-red-400"
-                    >
-                      <Icon name="trash-2" size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))
+    h('div', { className: 'flex-1 overflow-y-auto scrollbar-hide' },
+      state.isCollapsed ? h('div', { className: 'p-4 space-y-2' },
+        ...state.threads.slice(0, 5).map(t => h('button', {
+          key: t.id,
+          className: `w-full p-2 rounded-lg flex items-center justify-center transition-colors ${state.activeThread?.id === t.id ? 'bg-gray-800 text-blue-400' : 'text-gray-400 hover:bg-gray-800'}`,
+          onClick: () => { state.activeThread = t; render() }
+        }, h(Icon, { name: 'message-square', size: 16 })))
+      ) : state.threads.length === 0
+        ? h('div', { className: 'p-8 text-center text-gray-400' },
+            h('div', { className: 'text-gray-400 text-sm' }, 'No conversations yet')
+          )
+        : state.threads.map(thread => h('div', {
+            key: thread.id,
+            className: `p-4 border-b border-gray-800 cursor-pointer transition-colors ${state.activeThread?.id === thread.id ? 'bg-gray-800 border-l-4 border-blue-500' : 'hover:bg-gray-800'}`,
+            onClick: () => { state.activeThread = thread; render() }
+          },
+            h('div', { className: 'flex items-center justify-between' },
+              h('div', { className: 'flex-1 min-w-0' },
+                h('div', { className: 'font-medium truncate text-sm' }, thread.title),
+                thread.providerName && h('div', { className: 'text-xs truncate mt-1 text-gray-400' }, thread.providerName),
+                h('div', { className: 'text-xs mt-1 text-gray-500' },
+                  thread.updatedAt && !isNaN(new Date(thread.updatedAt))
+                    ? new Date(thread.updatedAt).toLocaleDateString()
+                    : 'Just now'
+                )
+              ),
+              h('button', {
+                className: 'p-1 rounded transition-colors hover:bg-red-900 text-red-400',
+                onClick: (e) => { e.stopPropagation(); handleDeleteThread(thread.id) }
+              }, h(Icon, { name: 'trash-2', size: 14 }))
             )
-          )}
-        </div>
-      </div>
+          ))
+    )
+  )
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {!state.activeThread ? (
-          // Empty State
-          <div className="flex-1 flex items-center justify-center bg-gray-900">
-            <div className="text-center max-w-md px-6">
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-gray-800">
-                <svg className="text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="32" height="32">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-              </div>
-              <h1 className="text-2xl font-semibold mb-2">VoiceChat</h1>
-              <p className="mb-6 text-gray-400">
-                Select a conversation or create a new one to start chatting with AI
-              </p>
-              <button
-                onClick={handleNewThread}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-              >
-                Create New Chat
-              </button>
-            </div>
-          </div>
-        ) : (
-          // Chat Area
-          <div className="flex-1 flex flex-col min-h-0 bg-white">
-            {/* Header */}
-            <div className="border-b px-6 py-4 flex-shrink-0 border-gray-200 bg-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">{state.activeThread.title}</h2>
-                  {state.activeThread.providerName && (
-                    <p className="text-gray-600 text-sm">{state.activeThread.providerName}</p>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  {isSpeaking && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-100">
-                      <div className="flex space-x-1">
-                        {[1, 2, 3].map(i => (
-                          <div key={i} className="w-1 rounded-full animate-pulse bg-cyan-600" style={{ height: `${4 + i * 3}px` }} />
-                        ))}
-                      </div>
-                      <span className="text-xs text-cyan-600">Speaking...</span>
-                      <button onClick={stopTts} className="p-1 rounded hover:bg-cyan-500/30 text-cyan-600">
-                        <Icon name="volume-x" size={14} />
-                      </button>
-                    </div>
-                  )}
-                  {isVoiceActiveState && (
-                    <div className="flex items-center gap-3 px-3 py-2 rounded-full bg-orange-100">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                        <span className="text-xs font-medium text-orange-600">
-                          {state.isRecording ? 'Recording...' : 'Listening...'}
-                        </span>
-                      </div>
-                      {showWaveform && (
-                        <div className="flex items-center">
-                          <WaveformBars level={state.audioLevel} isActive={true} />
-                        </div>
-                      )}
-                      <button
-                        onClick={handleVoiceChat}
-                        className="p-1 rounded-full hover:bg-red-500/30 text-red-600"
-                        title="Stop voice chat"
-                      >
-                        <Icon name="stop-circle" size={16} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+  // Main content
+  const mainContent = state.activeThread
+    ? h('div', { className: 'flex-1 flex flex-col min-h-0 bg-white' },
+        // Header
+        h('div', { className: 'border-b px-6 py-4 flex-shrink-0 border-gray-200 bg-white' },
+          h('div', { className: 'flex items-center justify-between' },
+            h('div', null,
+              h('h2', { className: 'text-lg font-semibold text-gray-900' }, state.activeThread.title),
+              state.activeThread.providerName && h('p', { className: 'text-gray-600 text-sm' }, state.activeThread.providerName)
+            ),
+            h('div', { className: 'flex items-center gap-3' },
+              state.isSpeaking && h('div', { className: 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-100' },
+                h('div', { className: 'flex space-x-1' },
+                  [1, 2, 3].map(i => h('div', {
+                    key: i,
+                    className: 'w-1 rounded-full animate-pulse bg-cyan-600',
+                    style: { height: `${4 + i * 3}px` }
+                  }))
+                ),
+                h('span', { className: 'text-xs text-cyan-600' }, 'Speaking...'),
+                h('button', { onClick: stopTts, className: 'p-1 rounded hover:bg-cyan-500/30 text-cyan-600' }, h(Icon, { name: 'volume-x', size: 14 }))
+              ),
+              isVoiceActiveState && h('div', { className: 'flex items-center gap-3 px-3 py-2 rounded-full bg-orange-100' },
+                h('div', { className: 'flex items-center gap-2' },
+                  h('div', { className: 'w-2 h-2 bg-red-500 rounded-full animate-pulse' }),
+                  h('span', { className: 'text-xs font-medium text-orange-600' }, state.isRecording ? 'Recording...' : 'Listening...')
+                ),
+                showWaveform && h('div', { className: 'flex items-center' }, h(WaveformBars, { level: state.audioLevel, isActive: true })),
+                h('button', {
+                  onClick: handleVoiceChat,
+                  className: 'p-1 rounded-full hover:bg-red-500/30 text-red-600'
+                }, h(Icon, { name: 'stop-circle', size: 16 }))
+              )
+            )
+          )
+        ),
 
-            {/* Messages */}
-            <div className="flex-1 min-h-0 overflow-y-auto scrollable-messages bg-gray-50">
-              <div className="px-6 py-4 min-h-full">
-                <div className="max-w-4xl mx-auto space-y-4">
-                  {threadMessages.map((message) => (
-                    <MessageBubble key={message.id} message={message} />
-                  ))}
-                  {state.isStreaming && (
-                    <div className="flex justify-start">
-                      <div className="max-w-[80%] rounded-lg p-4 bg-gray-800 border border-gray-700 text-white">
-                        <div className="flex items-center space-x-2">
-                          <div className="flex space-x-1">
-                            {[1, 2, 3].map(i => (
-                              <div
-                                key={i}
-                                className="w-1 bg-gray-400 rounded-full animate-pulse"
-                                style={{ height: `${Math.random() * 8 + 4}px`, animationDelay: `${i * 0.1}s` }}
-                              />
-                            ))}
-                          </div>
-                          <span className="text-gray-500">Thinking...</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+        // Messages
+        h('div', { className: 'flex-1 min-h-0 overflow-y-auto scrollable-messages bg-gray-50' },
+          h('div', { className: 'px-6 py-4 min-h-full' },
+            h('div', { className: 'max-w-4xl mx-auto space-y-4' },
+              ...threadMessages.map(m => h(MessageBubble, { key: m.id, message: m })),
+              state.isStreaming && h('div', { className: 'flex justify-start' },
+                h('div', { className: 'max-w-[80%] rounded-lg p-4 bg-gray-800 border border-gray-700 text-white' },
+                  h('div', { className: 'flex items-center space-x-2' },
+                    h('div', { className: 'flex space-x-1' },
+                      [1, 2, 3].map(i => h('div', {
+                        key: i,
+                        className: 'w-1 bg-gray-400 rounded-full animate-pulse',
+                        style: { height: `${Math.random() * 8 + 4}px`, animationDelay: `${i * 0.1}s` }
+                      }))
+                    ),
+                    h('span', { className: 'text-gray-500' }, 'Thinking...')
+                  )
+                )
+              )
+            )
+          )
+        ),
 
-            {/* Input Area */}
-            <div className="border-t px-6 py-4 flex-shrink-0 border-gray-200 bg-white">
-              <div className="max-w-4xl mx-auto">
-                {/* Provider/Model Controls Row */}
-                <div className="flex items-center gap-3 mb-3">
-                  {/* Provider Selector */}
-                  <div className="relative flex-1 max-w-[180px]">
-                    <select
-                      className="w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900"
-                      onChange={(e) => { state.selectedProvider = e.target.value; render() }}
-                      value={state.selectedProvider}
-                    >
-                      {state.providers.map(provider => (
-                        <option key={provider.id} value={provider.id}>{provider.name}</option>
-                      ))}
-                    </select>
-                    <Icon name="chevron-down" size={14} className="absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400" />
-                  </div>
+        // Input Area
+        h('div', { className: 'border-t px-6 py-4 flex-shrink-0 border-gray-200 bg-white' },
+          h('div', { className: 'max-w-4xl mx-auto' },
+            h('div', { className: 'flex items-center gap-3 mb-3' },
+              h('div', { className: 'relative flex-1 max-w-[180px]' },
+                h('select', {
+                  className: 'w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900',
+                  onChange: (e) => { state.selectedProvider = e.target.value; render() },
+                  value: state.selectedProvider
+                }, ...state.providers.map(p => h('option', { key: p.id, value: p.id }, p.name))),
+                h(Icon, { name: 'chevron-down', size: 14, className: 'absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400' })
+              ),
+              h('div', { className: 'relative flex-1 max-w-[180px]' },
+                h('select', {
+                  className: 'w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 bg-white border-gray-300 text-gray-900',
+                  onChange: (e) => { state.selectedModel = e.target.value; render() },
+                  value: state.selectedModel,
+                  disabled: !state.selectedProvider
+                },
+                  h('option', { value: '' }, 'Model'),
+                  ...(provider?.models || []).map(m => h('option', { key: m.id, value: m.id }, m.name))
+                ),
+                h(Icon, { name: 'chevron-down', size: 14, className: 'absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400' })
+              ),
+              h('button', { className: 'p-2 rounded-lg transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300', title: 'Refresh Models' }, h(Icon, { name: 'refresh-cw', size: 16 })),
+              state.isVoiceActive && h('div', { className: 'flex items-center gap-1' },
+                h('button', {
+                  onClick: () => { state.voiceMode = 'continuous'; render() },
+                  className: `p-1.5 rounded transition-colors ${state.voiceMode === 'continuous' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300'}`
+                }, h(Icon, { name: 'radio', size: 14 })),
+                h('button', {
+                  onClick: () => { state.voiceMode = 'push-to-talk'; render() },
+                  className: `p-1.5 rounded transition-colors ${state.voiceMode === 'push-to-talk' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300'}`
+                }, h(Icon, { name: 'hand', size: 14 }))
+              ),
+              state.voiceMode === 'push-to-talk' && state.isVoiceActive
+                ? h('button', {
+                    className: `p-2 rounded-lg transition-colors relative ${state.isRecording ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-orange-600/30 text-orange-400 border border-orange-500/50'}`
+                  },
+                    h(Icon, { name: 'mic', size: 16 }),
+                    state.isRecording && h('span', { className: 'absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse' })
+                  )
+                : h('button', {
+                    onClick: handleVoiceChat,
+                    className: `p-2 rounded-lg transition-colors relative ${isVoiceActiveState ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'}`
+                  },
+                    h(Icon, { name: 'mic', size: 16 }),
+                    isVoiceActiveState && h('span', { className: 'absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse' })
+                  ),
+              h('button', {
+                onClick: () => { state.ttsEnabled = !state.ttsEnabled; render() },
+                className: `p-2 rounded-lg transition-colors ${
+                  state.ttsEnabled && !state.ttsMuted ? 'bg-cyan-500 hover:bg-cyan-600 text-white'
+                  : state.ttsEnabled && state.ttsMuted ? 'bg-amber-100 hover:bg-amber-200 text-amber-600'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
+                }`
+              }, state.ttsEnabled ? (state.ttsMuted ? h(Icon, { name: 'volume-x', size: 18 }) : h(Icon, { name: 'volume-2', size: 18 })) : h(Icon, { name: 'settings', size: 18, className: 'opacity-50' }))
+            ),
 
-                  {/* Model Selector */}
-                  <div className="relative flex-1 max-w-[180px]">
-                    <select
-                      className="w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 bg-white border-gray-300 text-gray-900"
-                      onChange={(e) => { state.selectedModel = e.target.value; render() }}
-                      value={state.selectedModel}
-                      disabled={!state.selectedProvider}
-                    >
-                      <option value="">Model</option>
-                      {provider?.models?.map(model => (
-                        <option key={model.id} value={model.id}>{model.name}</option>
-                      ))}
-                    </select>
-                    <Icon name="chevron-down" size={14} className="absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400" />
-                  </div>
+            h('div', { className: 'flex items-end space-x-3' },
+              h('div', { className: 'flex-1 relative' },
+                h('textarea', {
+                  className: `w-full border rounded-lg p-3 pr-24 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] max-h-[120px] transition-all bg-white border-gray-300 text-gray-900 placeholder-gray-500 ${isVoiceActiveState ? (state.isRecording ? 'border-orange-500 ring-2 ring-orange-500/20' : 'border-red-500 ring-2 ring-red-500/20') : ''}`,
+                  value: state.inputText,
+                  onInput: (e) => { state.inputText = e.target.value; render() },
+                  onKeyDown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } },
+                  placeholder: isVoiceActiveState ? (state.voiceMode === 'push-to-talk' ? (state.isRecording ? 'Speak now... (release to send)' : 'Hold mic button to record') : (state.isRecording ? 'Speak now...' : 'Listening...')) : 'Type your message...',
+                  rows: 1,
+                  disabled: isVoiceActiveState && !state.isRecording
+                }),
+                isVoiceActiveState && h('div', { className: 'absolute top-2 right-2 flex items-center space-x-2' },
+                  state.audioLevel > 0 && h('div', { className: 'flex items-center gap-0.5' },
+                    h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: `${Math.min(20, state.audioLevel / 5)}px` } }),
+                    h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: `${Math.min(20, state.audioLevel / 4)}px`, animationDelay: '0.1s' } }),
+                    h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: `${Math.min(20, state.audioLevel / 3)}px`, animationDelay: '0.2s' } })
+                  ),
+                  h('span', { className: 'text-xs text-orange-600' }, state.isRecording ? 'Recording...' : 'Listening...')
+                ),
+                state.selectedProvider && !isVoiceActiveState && h('div', { className: 'absolute bottom-2 right-2 flex items-center space-x-2' },
+                  h('span', { className: 'text-xs px-2 py-1 rounded text-gray-500 bg-gray-100' },
+                    (state.providers.find(p => p.id === state.selectedProvider)?.name || 'Provider') +
+                    (state.selectedModel && ' • ' + (provider?.models?.find(m => m.id === state.selectedModel)?.name || 'Model'))
+                  )
+                )
+              ),
+              h('button', {
+                onClick: handleSendMessage,
+                disabled: !state.inputText.trim() || state.isLoading,
+                className: 'p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors'
+              }, h(Icon, { name: 'send', size: 18 }))
+            ),
 
-                  {/* Refresh Button */}
-                  <button
-                    className="p-2 rounded-lg transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300"
-                    title="Refresh Models"
-                  >
-                    <Icon name="refresh-cw" size={16} />
-                  </button>
+            isVoiceActiveState && h('div', { className: 'mt-2 text-center text-xs text-gray-400' },
+              state.voiceMode === 'push-to-talk' ? 'Hold mic button to record • Release to send' : 'Speak to send • Auto-sends after 1.5s silence'
+            )
+          )
+        )
+      )
+    : h('div', { className: 'flex-1 flex items-center justify-center bg-gray-900' },
+        h('div', { className: 'text-center max-w-md px-6' },
+          h('div', { className: 'w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-gray-800' },
+            h('svg', { className: 'text-blue-400', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 32, height: 32 },
+              h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' })
+            )
+          ),
+          h('h1', { className: 'text-2xl font-semibold mb-2' }, 'VoiceChat'),
+          h('p', { className: 'mb-6 text-gray-400' }, 'Select a conversation or create a new one to start chatting with AI'),
+          h('button', {
+            onClick: handleNewThread,
+            className: 'bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors'
+          }, 'Create New Chat')
+        )
+      )
 
-                  {/* Voice Mode Toggle */}
-                  {state.isVoiceActive && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => { state.voiceMode = 'continuous'; render() }}
-                        className={`p-1.5 rounded transition-colors ${
-                          state.voiceMode === 'continuous'
-                            ? 'bg-orange-600 text-white'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300'
-                        }`}
-                        title="Continuous mode"
-                      >
-                        <Icon name="radio" size={14} />
-                      </button>
-                      <button
-                        onClick={() => { state.voiceMode = 'push-to-talk'; render() }}
-                        className={`p-1.5 rounded transition-colors ${
-                          state.voiceMode === 'push-to-talk'
-                            ? 'bg-orange-600 text-white'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300'
-                        }`}
-                        title="Push-to-talk"
-                      >
-                        <Icon name="hand" size={14} />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Voice Chat Toggle */}
-                  {state.voiceMode === 'push-to-talk' && state.isVoiceActive ? (
-                    <button
-                      className={`p-2 rounded-lg transition-colors relative ${
-                        state.isRecording
-                          ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                          : 'bg-orange-600/30 text-orange-400 border border-orange-500/50'
-                      }`}
-                      title={state.isRecording ? 'Recording... release to send' : 'Hold to record'}
-                    >
-                      <Icon name="mic" size={16} />
-                      {state.isRecording && (
-                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                      )}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleVoiceChat}
-                      className={`p-2 rounded-lg transition-colors relative ${
-                        isVoiceActiveState
-                          ? 'bg-red-500 hover:bg-red-600 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
-                      }`}
-                      title={isVoiceActiveState ? 'Stop voice chat' : 'Start voice chat'}
-                    >
-                      <Icon name="mic" size={16} />
-                      {isVoiceActiveState && (
-                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                      )}
-                    </button>
-                  )}
-
-                  {/* TTS Toggle */}
-                  <button
-                    onClick={() => { state.ttsEnabled = !state.ttsEnabled; render() }}
-                    className={`p-2 rounded-lg transition-colors ${
-                      state.ttsEnabled && !state.ttsMuted
-                        ? 'bg-cyan-500 hover:bg-cyan-600 text-white'
-                        : state.ttsEnabled && state.ttsMuted
-                          ? 'bg-amber-100 hover:bg-amber-200 text-amber-600'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
-                    }`}
-                    title={state.ttsEnabled ? (state.ttsMuted ? 'Unmute TTS' : 'Mute TTS') : 'Enable TTS'}
-                  >
-                    {state.ttsEnabled ? (
-                      state.ttsMuted ? <Icon name="volume-x" size={18} /> : <Icon name="volume-2" size={18} />
-                    ) : (
-                      <Icon name="settings" size={18} className="opacity-50" />
-                    )}
-                  </button>
-                </div>
-
-                {/* Message Input Row */}
-                <div className="flex items-end space-x-3">
-                  <div className="flex-1 relative">
-                    <textarea
-                      value={state.inputText}
-                      onChange={(e) => { state.inputText = e.target.value; render() }}
-                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }}
-                      placeholder={
-                        isVoiceActiveState
-                          ? (state.voiceMode === 'push-to-talk'
-                              ? (state.isRecording ? 'Speak now... (release to send)' : 'Hold mic button to record')
-                              : (state.isRecording ? 'Speak now...' : 'Listening...'))
-                          : 'Type your message...'
-                      }
-                      className={`w-full border rounded-lg p-3 pr-24 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] max-h-[120px] transition-all bg-white border-gray-300 text-gray-900 placeholder-gray-500 ${
-                        isVoiceActiveState
-                          ? (state.isRecording ? 'border-orange-500 ring-2 ring-orange-500/20' : 'border-red-500 ring-2 ring-red-500/20')
-                          : ''
-                      }`}
-                      rows={1}
-                      disabled={isVoiceActiveState && !state.isRecording}
-                    />
-
-                    {/* Voice Status Indicator */}
-                    {isVoiceActiveState && (
-                      <div className="absolute top-2 right-2 flex items-center space-x-2">
-                        {state.audioLevel > 0 && (
-                          <div className="flex items-center gap-0.5">
-                            <div className="w-1 bg-orange-500 rounded-full animate-pulse" style={{ height: `${Math.min(20, state.audioLevel / 5)}px` }} />
-                            <div className="w-1 bg-orange-500 rounded-full animate-pulse" style={{ height: `${Math.min(20, state.audioLevel / 4)}px`, animationDelay: '0.1s' }} />
-                            <div className="w-1 bg-orange-500 rounded-full animate-pulse" style={{ height: `${Math.min(20, state.audioLevel / 3)}px`, animationDelay: '0.2s' }} />
-                          </div>
-                        )}
-                        <span className="text-xs text-orange-600">
-                          {state.isRecording ? 'Recording...' : 'Listening...'}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Quick Provider Info */}
-                    {state.selectedProvider && !isVoiceActiveState && (
-                      <div className="absolute bottom-2 right-2 flex items-center space-x-2">
-                        <span className="text-xs px-2 py-1 rounded text-gray-500 bg-gray-100">
-                          {state.providers.find(p => p.id === state.selectedProvider)?.name || 'Provider'}
-                          {state.selectedModel && ' • ' + (provider?.models?.find(m => m.id === state.selectedModel)?.name || 'Model')}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Send Button */}
-                  <button
-                    onClick={handleSendMessage}
-                    disabled={!state.inputText.trim() || state.isLoading}
-                    className="p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-                  >
-                    <Icon name="send" size={18} />
-                  </button>
-                </div>
-
-                {/* Voice Mode Hint */}
-                {isVoiceActiveState && (
-                  <div className="mt-2 text-center text-xs text-gray-400">
-                    {state.voiceMode === 'push-to-talk'
-                      ? 'Hold mic button to record • Release to send'
-                      : 'Speak to send • Auto-sends after 1.5s silence'
-                    }
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+  return h('div', { className: 'flex h-screen bg-black text-white' },
+    sidebar,
+    h('div', { className: 'flex-1 flex flex-col min-w-0' }, mainContent)
   )
 }
 
