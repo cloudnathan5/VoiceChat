@@ -81,7 +81,8 @@ const state = {
   isStreaming: false, isLoading: false, isVoiceActive: false,
   isListening: false, isRecording: false, isSpeaking: false,
   voiceMode: 'continuous', transcript: '', audioLevel: 0,
-  userStartedSpeaking: false, isCollapsed: false, inputText: ''
+  userStartedSpeaking: false, isCollapsed: false, inputText: '',
+  showTtsMenu: false
 }
 
 function getMessages(threadId) { return state.messages[threadId] || [] }
@@ -260,7 +261,6 @@ function scrollToBottom() {
   setTimeout(() => { const container = document.querySelector('.scrollable-messages'); if (container) container.scrollTop = container.scrollHeight }, 50)
 }
 
-// Auto-send on silence
 let lastSentTranscript = '', lastWordTime = 0
 setInterval(() => {
   if (!state.isListening) { lastWordTime = 0; clearTimeout(window._voiceAutoSendTimeout); return }
@@ -282,7 +282,7 @@ function MessageBubble(message) {
       h('div', { className: 'w-6 h-6 rounded-full flex items-center justify-center ' + (isUser ? 'bg-blue-700' : 'bg-gray-700') },
         isUser ? Icon({ name: 'user', size: 12, className: 'text-white' }) : h('div', { className: 'w-2 h-2 bg-gray-600 rounded-full' })
       ),
-      h('span', { className: 'text-sm font-medium text-gray-300' }, isUser ? 'You' : 'AI')
+      h('span', { className: 'text-sm font-medium ' + (isUser ? 'text-white' : 'text-gray-400') }, isUser ? 'You' : 'AI')
     ),
     h('div', { className: 'flex items-center space-x-2' },
       h('button', { className: 'p-1 rounded transition-colors hover:bg-gray-700 text-gray-400', onClick: () => navigator.clipboard.writeText(message.content) }, Icon({ name: 'copy', size: 12 }))
@@ -327,76 +327,96 @@ function App() {
 
   // Sidebar
   const sidebar = h('div', {
-    className: (state.isCollapsed ? 'w-16' : 'w-80') + ' border-r border-gray-800 bg-gray-900 flex flex-col transition-all duration-300'
+    className: (state.isCollapsed ? 'w-16' : 'w-80') + ' border-r flex flex-col transition-all duration-300 bg-gray-900 border-gray-800'
   },
     h('div', { className: 'p-6 border-b border-gray-800' },
       h('div', { className: 'flex items-center justify-between' },
-        !state.isCollapsed && h('h1', { className: 'text-xl font-bold' }, 'VoiceChat'),
+        !state.isCollapsed && h('h1', { className: 'text-xl font-bold text-white' }, 'VoiceChat'),
         h('div', { className: 'flex items-center gap-2' },
           h('button', { className: 'p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800', onClick: () => { state.isCollapsed = !state.isCollapsed; render() } }, Icon({ name: state.isCollapsed ? 'plus' : 'x', size: 20 })),
-          !state.isCollapsed && h('button', { className: 'p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800', onClick: () => { state.darkMode = !state.darkMode; render() } }, Icon({ name: 'sun', size: 20 }))
+          !state.isCollapsed && h('button', { className: 'p-2 rounded-lg transition-colors text-yellow-400 hover:text-yellow-300 hover:bg-gray-800', onClick: () => { state.darkMode = !state.darkMode; render() } }, Icon({ name: 'sun', size: 20 }))
         )
       ),
       !state.isCollapsed && h('button', { className: 'w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors font-medium', onClick: handleNewThread }, Icon({ name: 'plus', size: 16 }), 'New Chat')
     ),
     h('div', { className: 'flex-1 overflow-y-auto scrollbar-hide' },
-      state.isCollapsed ? h('div', { className: 'p-4 space-y-2' },
-        ...state.threads.slice(0, 5).map(t => h('button', { className: 'w-full p-2 rounded-lg flex items-center justify-center transition-colors ' + (state.activeThread && state.activeThread.id === t.id ? 'bg-gray-800 text-blue-400' : 'text-gray-400 hover:bg-gray-800'), onClick: () => { state.activeThread = t; render() } }, Icon({ name: 'message-square', size: 16 })))
-      ) : state.threads.length === 0
-        ? h('div', { className: 'p-8 text-center text-gray-400' }, h('div', { className: 'text-gray-400 text-sm' }, 'No conversations yet'))
-        : state.threads.map(thread => h('div', {
-            className: 'p-4 border-b border-gray-800 cursor-pointer transition-colors ' + (state.activeThread && state.activeThread.id === thread.id ? 'bg-gray-800 border-l-4 border-blue-500' : 'hover:bg-gray-800'),
-            onClick: () => { state.activeThread = thread; render() }
-          },
-            h('div', { className: 'flex items-center justify-between' },
-              h('div', { className: 'flex-1 min-w-0' },
-                h('div', { className: 'font-medium truncate text-sm' }, thread.title),
-                thread.providerName && h('div', { className: 'text-xs truncate mt-1 text-gray-400' }, thread.providerName),
-                h('div', { className: 'text-xs mt-1 text-gray-500' }, thread.updatedAt && !isNaN(new Date(thread.updatedAt)) ? new Date(thread.updatedAt).toLocaleDateString() : 'Just now')
-              ),
-              h('button', { className: 'p-1 rounded transition-colors hover:bg-red-900 text-red-400', onClick: (e) => { e.stopPropagation(); handleDeleteThread(thread.id) } }, Icon({ name: 'trash-2', size: 14 }))
+      !state.isCollapsed && (
+        state.threads.length === 0
+          ? h('div', { className: 'p-8 text-center text-gray-400' },
+              Icon({ name: 'message-square', size: 48, className: 'mx-auto mb-4 opacity-50' }),
+              h('p', { className: 'text-sm' }, 'No conversations yet')
             )
-          ))
+          : state.threads.map(thread => h('div', {
+              className: 'p-4 border-b border-gray-800 cursor-pointer transition-colors ' + (state.activeThread && state.activeThread.id === thread.id ? 'bg-gray-800 border-l-4 border-blue-500' : 'hover:bg-gray-800'),
+              onClick: () => { state.activeThread = thread; render() }
+            },
+              h('div', { className: 'flex items-center justify-between' },
+                h('div', { className: 'flex-1 min-w-0' },
+                  h('div', { className: 'font-medium truncate text-sm text-white' }, thread.title),
+                  thread.providerName && h('div', { className: 'text-xs truncate mt-1 text-gray-400' }, thread.providerName),
+                  h('div', { className: 'text-xs mt-1 text-gray-500' }, thread.updatedAt && !isNaN(new Date(thread.updatedAt)) ? new Date(thread.updatedAt).toLocaleDateString() : 'Just now')
+                ),
+                h('button', { className: 'p-1 rounded transition-colors hover:bg-red-900 text-red-400', onClick: (e) => { e.stopPropagation(); handleDeleteThread(thread.id) } }, Icon({ name: 'trash-2', size: 14 }))
+              )
+            ))
+      ),
+      state.isCollapsed && (
+        h('div', { className: 'p-4 space-y-2' },
+          ...state.threads.slice(0, 5).map(t => h('button', { className: 'w-full p-2 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-800 ' + (state.activeThread && state.activeThread.id === t.id ? 'bg-gray-800 text-blue-400' : 'text-gray-400'), onClick: () => { state.activeThread = t; render() } }, Icon({ name: 'message-square', size: 16 })))
+        )
+      ),
+      state.isCollapsed && state.threads.length > 5 && h('div', { className: 'text-center text-xs text-gray-500' }, '+' + (state.threads.length - 5) + ' more')
     )
   )
 
   // Main content
   const mainContent = state.activeThread
-    ? h('div', { className: 'flex-1 flex flex-col min-h-0 bg-white' },
-        h('div', { className: 'border-b px-6 py-4 flex-shrink-0 border-gray-200 bg-white' },
+    ? h('div', { className: 'flex-1 flex flex-col min-h-0 bg-gray-950' },
+        // Header
+        h('div', { className: 'border-b px-6 py-4 flex-shrink-0 border-gray-800 bg-gray-900' },
           h('div', { className: 'flex items-center justify-between' },
             h('div', null,
-              h('h2', { className: 'text-lg font-semibold text-gray-900' }, state.activeThread.title),
-              state.activeThread.providerName && h('p', { className: 'text-gray-600 text-sm' }, state.activeThread.providerName)
+              h('h2', { className: 'text-lg font-semibold text-white' }, state.activeThread.title),
+              state.activeThread.providerName && h('p', { className: 'text-gray-400 text-sm' }, state.activeThread.providerName)
             ),
             h('div', { className: 'flex items-center gap-3' },
-              state.isSpeaking && h('div', { className: 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-100' },
+              state.isSpeaking && h('div', { className: 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-600/20' },
                 h('div', { className: 'flex space-x-1' },
-                  [1, 2, 3].map(i => h('div', { className: 'w-1 rounded-full animate-pulse bg-cyan-600', style: { height: (4 + i * 3) + 'px' } }))
+                  [1, 2, 3].map(i => h('div', {
+                    key: i,
+                    className: 'w-1 rounded-full animate-pulse bg-cyan-400',
+                    style: { height: (4 + i * 3) + 'px' }
+                  }))
                 ),
-                h('span', { className: 'text-xs text-cyan-600' }, 'Speaking...'),
-                h('button', { onClick: stopTts, className: 'p-1 rounded hover:bg-cyan-500/30 text-cyan-600' }, Icon({ name: 'volume-x', size: 14 }))
+                h('span', { className: 'text-xs text-cyan-400' }, 'Speaking...'),
+                h('button', { onClick: stopTts, className: 'p-1 rounded hover:bg-cyan-500/30 text-cyan-400' }, Icon({ name: 'volume-x', size: 14 }))
               ),
-              isVoiceActiveState && h('div', { className: 'flex items-center gap-3 px-3 py-2 rounded-full bg-orange-100' },
+              isVoiceActiveState && h('div', { className: 'flex items-center gap-3 px-3 py-2 rounded-full bg-orange-600/20' },
                 h('div', { className: 'flex items-center gap-2' },
                   h('div', { className: 'w-2 h-2 bg-red-500 rounded-full animate-pulse' }),
-                  h('span', { className: 'text-xs font-medium text-orange-600' }, state.isRecording ? 'Recording...' : 'Listening...')
+                  h('span', { className: 'text-xs font-medium text-orange-400' }, state.isRecording ? 'Recording...' : 'Listening...')
                 ),
                 showWaveform && h('div', { className: 'flex items-center' }, WaveformBars({ level: state.audioLevel, isActive: true })),
-                h('button', { onClick: handleVoiceChat, className: 'p-1 rounded-full hover:bg-red-500/30 text-red-600' }, Icon({ name: 'stop-circle', size: 16 }))
+                h('button', { onClick: handleVoiceChat, className: 'p-1 rounded-full hover:bg-red-500/30 text-red-400' }, Icon({ name: 'stop-circle', size: 16 }))
               )
             )
           )
         ),
-        h('div', { className: 'flex-1 min-h-0 overflow-y-auto scrollable-messages bg-gray-50' },
-          h('div', { className: 'px-6 py-4 min-h-full' },
+
+        // Messages
+        h('div', { className: 'flex-1 min-h-0 overflow-y-auto scrollable-messages' },
+          h('div', { className: 'px-6 py-4 min-h-full bg-gray-900' },
             h('div', { className: 'max-w-4xl mx-auto space-y-4' },
               ...threadMessages.map(m => MessageBubble(m)),
               state.isStreaming && h('div', { className: 'flex justify-start' },
                 h('div', { className: 'max-w-[80%] rounded-lg p-4 bg-gray-800 border border-gray-700 text-white' },
                   h('div', { className: 'flex items-center space-x-2' },
                     h('div', { className: 'flex space-x-1' },
-                      [1, 2, 3].map(i => h('div', { className: 'w-1 bg-gray-400 rounded-full animate-pulse', style: { height: (Math.random() * 8 + 4) + 'px', animationDelay: (i * 0.1) + 's' } }))
+                      [1, 2, 3].map(i => h('div', {
+                        key: i,
+                        className: 'w-1 bg-gray-400 rounded-full animate-pulse',
+                        style: { height: (Math.random() * 8 + 4) + 'px', animationDelay: (i * 0.1) + 's' }
+                      }))
                     ),
                     h('span', { className: 'text-gray-500' }, 'Thinking...')
                   )
@@ -405,45 +425,57 @@ function App() {
             )
           )
         ),
-        h('div', { className: 'border-t px-6 py-4 flex-shrink-0 border-gray-200 bg-white' },
+
+        // Input Area
+        h('div', { className: 'border-t px-6 py-4 flex-shrink-0 border-gray-800 bg-gray-900' },
           h('div', { className: 'max-w-4xl mx-auto' },
+            // Controls row
             h('div', { className: 'flex items-center gap-3 mb-3' },
+              // Provider selector
               h('div', { className: 'relative flex-1 max-w-[180px]' },
-                h('select', { className: 'w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900', onChange: (e) => { state.selectedProvider = e.target.value; render() }, value: state.selectedProvider },
+                h('select', { className: 'w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 border-gray-700 text-white', onChange: (e) => { state.selectedProvider = e.target.value; render() }, value: state.selectedProvider },
+                  h('option', { value: '' }, 'Provider'),
                   ...state.providers.map(p => h('option', { value: p.id }, p.name))
                 ),
                 Icon({ name: 'chevron-down', size: 14, className: 'absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400' })
               ),
+              // Model selector
               h('div', { className: 'relative flex-1 max-w-[180px]' },
-                h('select', { className: 'w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 bg-white border-gray-300 text-gray-900', onChange: (e) => { state.selectedModel = e.target.value; render() }, value: state.selectedModel, disabled: !state.selectedProvider },
+                h('select', { className: 'w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 bg-gray-800 border-gray-700 text-white', onChange: (e) => { state.selectedModel = e.target.value; render() }, value: state.selectedModel, disabled: !state.selectedProvider },
                   h('option', { value: '' }, 'Model'),
                   ...(provider && provider.models ? provider.models.map(m => h('option', { value: m.id }, m.name)) : [])
                 ),
                 Icon({ name: 'chevron-down', size: 14, className: 'absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400' })
               ),
-              h('button', { className: 'p-2 rounded-lg transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300', title: 'Refresh Models' }, Icon({ name: 'refresh-cw', size: 16 })),
+              // Refresh button
+              h('button', { className: 'p-2 rounded-lg transition-colors bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700', title: 'Refresh Models' }, Icon({ name: 'refresh-cw', size: 16 })),
+              // Voice mode toggle
               state.isVoiceActive && h('div', { className: 'flex items-center gap-1' },
-                h('button', { onClick: () => { state.voiceMode = 'continuous'; render() }, className: 'p-1.5 rounded transition-colors ' + (state.voiceMode === 'continuous' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300') }, Icon({ name: 'radio', size: 14 })),
-                h('button', { onClick: () => { state.voiceMode = 'push-to-talk'; render() }, className: 'p-1.5 rounded transition-colors ' + (state.voiceMode === 'push-to-talk' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300') }, Icon({ name: 'hand', size: 14 }))
+                h('button', { onClick: () => { state.voiceMode = 'continuous'; render() }, className: 'p-1.5 rounded transition-colors ' + (state.voiceMode === 'continuous' ? 'bg-orange-600 text-white' : 'bg-gray-800 text-gray-500 hover:bg-gray-700 border border-gray-700') }, Icon({ name: 'radio', size: 14 })),
+                h('button', { onClick: () => { state.voiceMode = 'push-to-talk'; render() }, className: 'p-1.5 rounded transition-colors ' + (state.voiceMode === 'push-to-talk' ? 'bg-orange-600 text-white' : 'bg-gray-800 text-gray-500 hover:bg-gray-700 border border-gray-700') }, Icon({ name: 'hand', size: 14 }))
               ),
+              // Voice chat toggle
               state.voiceMode === 'push-to-talk' && state.isVoiceActive
                 ? h('button', { className: 'p-2 rounded-lg transition-colors relative ' + (state.isRecording ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-orange-600/30 text-orange-400 border border-orange-500/50') },
                     Icon({ name: 'mic', size: 16 }),
                     state.isRecording && h('span', { className: 'absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse' })
                   )
-                : h('button', { onClick: handleVoiceChat, className: 'p-2 rounded-lg transition-colors relative ' + (isVoiceActiveState ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300') },
+                : h('button', { onClick: handleVoiceChat, className: 'p-2 rounded-lg transition-colors relative ' + (isVoiceActiveState ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700') },
                     Icon({ name: 'mic', size: 16 }),
                     isVoiceActiveState && h('span', { className: 'absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse' })
                   ),
+              // TTS toggle
               h('button', {
                 onClick: () => { state.ttsEnabled = !state.ttsEnabled; render() },
-                className: 'p-2 rounded-lg transition-colors ' + (state.ttsEnabled && !state.ttsMuted ? 'bg-cyan-500 hover:bg-cyan-600 text-white' : state.ttsEnabled && state.ttsMuted ? 'bg-amber-100 hover:bg-amber-200 text-amber-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300')
+                className: 'p-2 rounded-lg transition-colors ' + (state.ttsEnabled && !state.ttsMuted ? 'bg-cyan-600 hover:bg-cyan-700 text-white' : state.ttsEnabled && state.ttsMuted ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700')
               }, state.ttsEnabled ? (state.ttsMuted ? Icon({ name: 'volume-x', size: 18 }) : Icon({ name: 'volume-2', size: 18 })) : Icon({ name: 'settings', size: 18, className: 'opacity-50' }))
             ),
+
+            // Textarea row
             h('div', { className: 'flex items-end space-x-3' },
               h('div', { className: 'flex-1 relative' },
                 h('textarea', {
-                  className: 'w-full border rounded-lg p-3 pr-24 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] max-h-[120px] transition-all bg-white border-gray-300 text-gray-900 placeholder-gray-500' + (isVoiceActiveState && !state.isRecording ? ' border-gray-300' : isVoiceActiveState && state.isRecording ? ' border-orange-500 ring-2 ring-orange-500/20' : isVoiceActiveState ? ' border-red-500 ring-2 ring-red-500/20' : ''),
+                  className: 'w-full border rounded-lg p-3 pr-24 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] max-h-[120px] transition-all bg-gray-800 border-gray-700 text-white placeholder-gray-500' + (isVoiceActiveState && !state.isRecording ? '' : isVoiceActiveState && state.isRecording ? ' border-orange-500 ring-2 ring-orange-500/20' : isVoiceActiveState ? ' border-red-500 ring-2 ring-red-500/20' : ''),
                   value: state.inputText,
                   onInput: (e) => { state.inputText = e.target.value; render() },
                   onKeyDown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } },
@@ -451,16 +483,18 @@ function App() {
                   rows: 1,
                   disabled: isVoiceActiveState && !state.isRecording
                 }),
+                // Voice status indicator
                 isVoiceActiveState && h('div', { className: 'absolute top-2 right-2 flex items-center space-x-2' },
                   state.audioLevel > 0 && h('div', { className: 'flex items-center gap-0.5' },
                     h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: Math.min(20, state.audioLevel / 5) + 'px' } }),
                     h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: Math.min(20, state.audioLevel / 4) + 'px', animationDelay: '0.1s' } }),
                     h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: Math.min(20, state.audioLevel / 3) + 'px', animationDelay: '0.2s' } })
                   ),
-                  h('span', { className: 'text-xs text-orange-600' }, state.isRecording ? 'Recording...' : 'Listening...')
+                  h('span', { className: 'text-xs text-orange-400' }, state.isRecording ? 'Recording...' : 'Listening...')
                 ),
+                // Quick provider info
                 state.selectedProvider && !isVoiceActiveState && h('div', { className: 'absolute bottom-2 right-2 flex items-center space-x-2' },
-                  h('span', { className: 'text-xs px-2 py-1 rounded text-gray-500 bg-gray-100' },
+                  h('span', { className: 'text-xs px-2 py-1 rounded text-gray-400 bg-gray-700' },
                     (state.providers.find(p => p.id === state.selectedProvider) && state.providers.find(p => p.id === state.selectedProvider).name || 'Provider') +
                     (state.selectedModel && ' \u2022 ' + (provider && provider.models && provider.models.find(m => m.id === state.selectedModel) && provider.models.find(m => m.id === state.selectedModel).name || 'Model'))
                   )
@@ -468,7 +502,9 @@ function App() {
               ),
               h('button', { onClick: handleSendMessage, disabled: !state.inputText || !state.inputText.trim() || state.isLoading, className: 'p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors' }, Icon({ name: 'send', size: 18 }))
             ),
-            isVoiceActiveState && h('div', { className: 'mt-2 text-center text-xs text-gray-400' },
+
+            // Voice mode hint
+            isVoiceActiveState && h('div', { className: 'mt-2 text-center text-xs text-gray-500' },
               state.voiceMode === 'push-to-talk' ? 'Hold mic button to record \u2022 Release to send' : 'Speak to send \u2022 Auto-sends after 1.5s silence'
             )
           )
@@ -481,16 +517,14 @@ function App() {
               h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' })
             )
           ),
-          h('h1', { className: 'text-2xl font-semibold mb-2' }, 'VoiceChat'),
+          h('h1', { className: 'text-2xl font-semibold mb-2 text-white' }, 'VoiceChat'),
           h('p', { className: 'mb-6 text-gray-400' }, 'Select a conversation or create a new one to start chatting with AI'),
           h('button', { onClick: handleNewThread, className: 'bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors' }, 'Create New Chat')
         )
       )
 
-  return h('div', { className: 'flex h-screen bg-black text-white' }, sidebar, h('div', { className: 'flex-1 flex flex-col min-w-0' }, mainContent))
+  return h('div', { className: 'flex h-screen font-inter bg-gray-950 text-white' }, sidebar, h('div', { className: 'flex-1 flex flex-col min-w-0' }, mainContent))
 }
-
-// ─── Render ──────────────────────────────────────────────────────────────────
 
 function render() {
   const root = document.getElementById('root')
