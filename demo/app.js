@@ -1,7 +1,11 @@
 // VoiceChat Demo — static, no server required
 // Visual clone of the main app with browser TTS only + SSE streaming
 
-// ─── DOM helpers ─────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  if (window.tailwindConfig && window.tailwind) {
+    window.tailwind.config = window.tailwindConfig
+  }
+})
 
 function h(tag, attrs, ...children) {
   const el = document.createElement(tag)
@@ -10,7 +14,7 @@ function h(tag, attrs, ...children) {
       if (k === 'className') el.className = v
       else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v)
       else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v)
-      else if (k === 'key') return // skip, not a DOM attribute
+      else if (k === 'key') return
       else el.setAttribute(k, v)
     })
   }
@@ -23,15 +27,13 @@ function h(tag, attrs, ...children) {
   return el
 }
 
-function svgIcon(d, size = 20, className = '') {
-  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: size, height: size, className },
-    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d })
-  )
+function svgIcon(d, size, className) {
+  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: size || 20, height: size || 20, className: className || '' },
+    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: d || '' }))
 }
 
 const ICONS = {
-  'plus': 'M12 4v16m8-8H4',
-  'x': 'M6 18L18 6M6 6l12 12',
+  'plus': 'M12 4v16m8-8H4', 'x': 'M6 18L18 6M6 6l12 12',
   'trash-2': 'M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6',
   'settings': 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
   'message-square': 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z',
@@ -51,29 +53,19 @@ const ICONS = {
   'test-tube': 'M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z',
 }
 
-function Icon({ name, size = 20, className = '' }) {
-  return svgIcon(ICONS[name] || '', size, className)
+function Icon(p) {
+  return svgIcon(ICONS[p.name] || '', p.size || 20, p.className || '')
 }
 
-// ─── Waveform Component ──────────────────────────────────────────────────────
-
-function WaveformBars({ level, isActive }) {
-  const barCount = 24
+function WaveformBars(p) {
   const container = h('div', { className: 'flex items-end justify-center gap-0.5 h-10' })
-  for (let i = 0; i < barCount; i++) {
-    const waveOffset = Math.sin((i / barCount) * Math.PI * 2) * 0.5 + 0.5
-    const barHeight = Math.max(4, (level / 128) * 40 * waveOffset + 4)
-    const barClass = isActive
-      ? (level > 20 ? 'bg-orange-500' : 'bg-red-500/50')
-      : 'bg-gray-600'
+  for (let i = 0; i < 24; i++) {
+    const waveOffset = Math.sin((i / 24) * Math.PI * 2) * 0.5 + 0.5
+    const barHeight = Math.max(4, (p.level / 128) * 40 * waveOffset + 4)
+    const barClass = p.isActive ? (p.level > 20 ? 'bg-orange-500' : 'bg-red-500/50') : 'bg-gray-600'
     container.appendChild(h('div', {
-      className: `rounded-full transition-all ${barClass}`,
-      style: {
-        width: '3px',
-        height: `${barHeight}px`,
-        transitionDelay: `${i / barCount * 0.3}s`,
-        transitionDuration: '100ms'
-      }
+      className: 'rounded-full transition-all ' + barClass,
+      style: { width: '3px', height: barHeight + 'px', transitionDelay: (i / 24 * 0.3) + 's', transitionDuration: '100ms' }
     }))
   }
   return container
@@ -82,114 +74,54 @@ function WaveformBars({ level, isActive }) {
 // ─── State ───────────────────────────────────────────────────────────────────
 
 const state = {
-  threads: [],
-  activeThread: null,
-  messages: {},
-  providers: [{
-    id: 'demo',
-    name: 'OpenAI',
-    baseUrl: 'https://api.openai.com/v1',
-    apiKey: '',
-    models: [
-      { id: 'gpt-4o', name: 'GPT-4o' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' }
-    ]
-  }],
-  models: {},
-  lastUsedProviderId: null,
-  lastUsedModelId: null,
-  darkMode: true,
-  ttsEnabled: false,
-  ttsMuted: false,
-  selectedProvider: 'demo',
-  selectedModel: 'gpt-4o',
-  isStreaming: false,
-  isLoading: false,
-  isVoiceActive: false,
-  isListening: false,
-  isRecording: false,
-  isSpeaking: false,
-  isInterrupting: false,
-  voiceMode: 'continuous',
-  transcript: '',
-  audioLevel: 0,
-  userStartedSpeaking: false,
-  showTtsMenu: false,
-  isAddingProvider: false,
-  isTesting: false,
-  isCollapsed: false,
-  inputText: ''
+  threads: [], activeThread: null, messages: {},
+  providers: [{ id: 'demo', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', apiKey: '', models: [{ id: 'gpt-4o', name: 'GPT-4o' }, { id: 'gpt-4o-mini', name: 'GPT-4o Mini' }] }],
+  darkMode: true, ttsEnabled: false, ttsMuted: false,
+  selectedProvider: 'demo', selectedModel: 'gpt-4o',
+  isStreaming: false, isLoading: false, isVoiceActive: false,
+  isListening: false, isRecording: false, isSpeaking: false,
+  voiceMode: 'continuous', transcript: '', audioLevel: 0,
+  userStartedSpeaking: false, isCollapsed: false, inputText: ''
 }
 
-function getMessages(threadId) {
-  return state.messages[threadId] || []
-}
+function getMessages(threadId) { return state.messages[threadId] || [] }
 
-// ─── SSE Streaming (replaces socket.io) ─────────────────────────────────────
+// ─── SSE Streaming ──────────────────────────────────────────────────────────
 
 async function streamResponse(threadId, userMessage, onToken, onComplete, onError) {
   const provider = state.providers.find(p => p.id === state.selectedProvider)
-  if (!provider) {
-    onError('No provider selected')
-    return
-  }
-
+  if (!provider) { onError('No provider selected'); return }
   const threadMessages = getMessages(threadId)
   const conversation = [...threadMessages, userMessage]
-
   try {
-    const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+    const response = await fetch(provider.baseUrl + '/chat/completions', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${provider.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: state.selectedModel,
-        messages: conversation.map(m => ({ role: m.role, content: m.content })),
-        max_tokens: 2000,
-        stream: true
-      })
+      headers: { 'Authorization': 'Bearer ' + provider.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: state.selectedModel, messages: conversation.map(m => ({ role: m.role, content: m.content })), max_tokens: 2000, stream: true })
     })
-
-    if (!response.ok) {
-      const err = await response.text()
-      onError(err)
-      return
-    }
-
+    if (!response.ok) { onError(await response.text()); return }
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let fullContent = ''
-
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-
       const chunk = decoder.decode(value)
-      const lines = chunk.split('\n')
-
-      for (const line of lines) {
+      for (const line of chunk.split('\n')) {
         if (line.startsWith('data: ') && line !== 'data: [DONE]') {
           try {
             const data = JSON.parse(line.slice(6))
-            const content = data.choices?.[0]?.delta?.content || ''
-            if (content) {
-              fullContent += content
-              onToken(content, fullContent)
-            }
-          } catch {}
+            const content = data.choices && data.choices[0] && data.choices[0].delta && data.choices[0].delta.content
+            if (content) { fullContent += content; onToken(content, fullContent) }
+          } catch (e) { /* ignore */ }
         }
       }
     }
-
     onComplete(fullContent)
-  } catch (error) {
-    onError(error.message)
-  }
+  } catch (error) { onError(error.message) }
 }
 
-// ─── TTS (browser only) ─────────────────────────────────────────────────────
+// ─── TTS ─────────────────────────────────────────────────────────────────────
 
 const synth = typeof window !== 'undefined' ? window.speechSynthesis : null
 let currentUtterance = null
@@ -197,140 +129,72 @@ let currentUtterance = null
 function speak(text) {
   if (!synth || !text.trim() || state.ttsMuted) return
   stopTts()
-
   const sentences = text.split(/(?<=[.!?])\s+/)
   if (sentences.length === 0) return
-
   let index = 0
   const speakNext = () => {
-    if (index >= sentences.length || state.ttsMuted) {
-      state.isSpeaking = false
-      render()
-      return
-    }
+    if (index >= sentences.length || state.ttsMuted) { state.isSpeaking = false; render(); return }
     currentUtterance = new SpeechSynthesisUtterance(sentences[index])
-    currentUtterance.rate = 1.1
-    currentUtterance.pitch = 1.0
-
-    currentUtterance.onend = () => {
-      index++
-      setTimeout(speakNext, 50)
-    }
-    currentUtterance.onerror = () => {
-      state.isSpeaking = false
-      render()
-    }
-
-    synth.speak(currentUtterance)
-    state.isSpeaking = true
-    render()
+    currentUtterance.rate = 1.1; currentUtterance.pitch = 1.0
+    currentUtterance.onend = () => { index++; setTimeout(speakNext, 50) }
+    currentUtterance.onerror = () => { state.isSpeaking = false; render() }
+    synth.speak(currentUtterance); state.isSpeaking = true; render()
   }
   speakNext()
 }
 
-function stopTts() {
-  if (synth) synth.cancel()
-  currentUtterance = null
-  state.isSpeaking = false
-  render()
-}
+function stopTts() { if (synth) synth.cancel()
+  currentUtterance = null; state.isSpeaking = false; render() }
 
 // ─── Speech Recognition ─────────────────────────────────────────────────────
 
-let recognition = null
-let recognitionRef = null
+let recognition = null, recognitionRef = null
 
 function setupSpeechRecognition(onFinalTranscript, onInterim) {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-  if (!SpeechRecognition) return null
-
-  recognition = new SpeechRecognition()
-  recognition.continuous = true
-  recognition.interimResults = true
-  recognition.lang = 'en-US'
-
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+  if (!SR) return null
+  recognition = new SR()
+  recognition.continuous = true; recognition.interimResults = true; recognition.lang = 'en-US'
   recognition.onresult = (event) => {
-    let finalTranscript = ''
-    let interimTranscript = ''
-
+    let finalTranscript = '', interimTranscript = ''
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const t = event.results[i][0].transcript
-      if (event.results[i].isFinal) {
-        finalTranscript += t + ' '
-        if (onFinalTranscript) onFinalTranscript(finalTranscript.trim())
-      } else {
-        interimTranscript += t
-        if (t.trim()) onInterim && onInterim(t.trim())
-      }
+      if (event.results[i].isFinal) { finalTranscript += t + ' '
+        if (onFinalTranscript) onFinalTranscript(finalTranscript.trim()) }
+      else { interimTranscript += t; if (t.trim()) onInterim && onInterim(t.trim()) }
     }
-
-    const live = finalTranscript + interimTranscript
-    state.transcript = live.trim()
-    render()
+    state.transcript = (finalTranscript + interimTranscript).trim(); render()
   }
-
   recognition.onerror = (event) => {
     console.error('Speech recognition error:', event.error)
-    if (event.error === 'not-allowed') {
-      state.isListening = false
-      state.isRecording = false
-      render()
-    }
+    if (event.error === 'not-allowed') { state.isListening = false; state.isRecording = false; render() }
   }
-
-  recognition.onend = () => {
-    if (state.isListening || state.isRecording) {
-      try { recognition.start() } catch (e) {}
-    }
-  }
-
+  recognition.onend = () => { if (state.isListening || state.isRecording) { try { recognition.start() } catch (e) {} } }
   return recognition
 }
 
 async function startListening(onTranscript) {
   try {
     const rec = setupSpeechRecognition(
-      (finalText) => {
-        if (onTranscript) onTranscript(finalText)
-      },
-      (interimText) => {
-        if (interimText.trim()) state.userStartedSpeaking = true
-      }
+      (finalText) => { if (onTranscript) onTranscript(finalText) },
+      (interimText) => { if (interimText.trim()) state.userStartedSpeaking = true }
     )
     if (!rec) throw new Error('SpeechRecognition not supported')
-    recognitionRef = rec
-    rec.start()
-    state.isListening = true
-    state.transcript = ''
-    render()
-    return true
-  } catch (e) {
-    console.error(e)
-    return false
-  }
+    recognitionRef = rec; rec.start(); state.isListening = true; state.transcript = ''
+    render(); return true
+  } catch (e) { console.error(e); return false }
 }
 
 function stopListening() {
-  if (recognitionRef) {
-    recognitionRef.stop()
-    recognitionRef = null
-  }
-  state.isListening = false
-  state.transcript = ''
-  render()
+  if (recognitionRef) { recognitionRef.stop(); recognitionRef = null }
+  state.isListening = false; state.transcript = ''; render()
 }
 
 // ─── Event Handlers ─────────────────────────────────────────────────────────
 
 function handleNewThread() {
   const id = Date.now().toString()
-  const thread = {
-    id,
-    title: `Chat ${state.threads.length + 1}`,
-    providerName: state.selectedProvider,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  }
+  const thread = { id, title: 'Chat ' + (state.threads.length + 1), providerName: state.selectedProvider, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
   state.threads = [thread, ...state.threads]
   state.messages[id] = []
   state.activeThread = thread
@@ -341,240 +205,115 @@ function handleDeleteThread(id) {
   if (confirm('Are you sure you want to delete this thread?')) {
     state.threads = state.threads.filter(t => t.id !== id)
     delete state.messages[id]
-    if (state.activeThread?.id === id) state.activeThread = null
+    if (state.activeThread && state.activeThread.id === id) state.activeThread = null
     render()
   }
 }
 
 function handleSendMessage() {
-  const text = state.inputText?.trim()
+  const text = state.inputText && state.inputText.trim()
   if (!text || !state.activeThread || state.isLoading) return
-
-  stopTts()
-  state.userStartedSpeaking = false
-
-  const userMessage = {
-    id: Date.now().toString(),
-    threadId: state.activeThread.id,
-    role: 'user',
-    content: text,
-    createdAt: new Date().toISOString()
-  }
-
+  stopTts(); state.userStartedSpeaking = false
+  const userMessage = { id: Date.now().toString(), threadId: state.activeThread.id, role: 'user', content: text, createdAt: new Date().toISOString() }
   state.messages[state.activeThread.id].push(userMessage)
-  state.inputText = ''
-  state.isLoading = true
-  state.isStreaming = true
+  state.inputText = ''; state.isLoading = true; state.isStreaming = true
   render()
-
-  // Scroll to bottom
   setTimeout(scrollToBottom, 50)
-
-  // Create streaming AI message
   const streamingMessageId = (Date.now() + 1).toString()
-  state.messages[state.activeThread.id].push({
-    id: streamingMessageId,
-    threadId: state.activeThread.id,
-    role: 'assistant',
-    content: '',
-    createdAt: new Date().toISOString(),
-    modelId: state.selectedModel,
-    isStreaming: true
+  state.messages[state.activeThread.id].push({ id: streamingMessageId, threadId: state.activeThread.id, role: 'assistant', content: '', createdAt: new Date().toISOString(), modelId: state.selectedModel, isStreaming: true })
+  let fullContent = '', thinkingContent = ''
+  const ttsEnabled = state.ttsEnabled, ttsMuted = state.ttsMuted
+  streamResponse(state.activeThread.id, userMessage, (token, accumulated) => {
+    fullContent = accumulated
+    const msgs = getMessages(state.activeThread.id)
+    const aiMsg = msgs.find(m => m.role === 'assistant' && m.isStreaming)
+    if (aiMsg) { aiMsg.content = fullContent; aiMsg.thinking = thinkingContent }
+    render()
+    if (ttsEnabled && !ttsMuted) { const sentences = fullContent.split(/(?<=[.!?])\s+/); sentences.forEach(s => speak(s)) }
+    scrollToBottom()
+  }, (completeContent) => {
+    const msgs = getMessages(state.activeThread.id)
+    const aiMsg = msgs.find(m => m.role === 'assistant' && m.isStreaming)
+    if (aiMsg) { aiMsg.isStreaming = false; aiMsg.content = completeContent }
+    state.isLoading = false; state.isStreaming = false
+    if (ttsEnabled && !ttsMuted && completeContent.trim()) speak(completeContent)
+    render(); scrollToBottom()
+  }, (error) => {
+    console.error('Stream error:', error)
+    const msgs = getMessages(state.activeThread.id)
+    const aiMsg = msgs.find(m => m.role === 'assistant' && m.isStreaming)
+    if (aiMsg) { aiMsg.isStreaming = false; aiMsg.content = 'Error: ' + error }
+    state.isLoading = false; state.isStreaming = false; render()
   })
-
-  let fullContent = ''
-  let thinkingContent = ''
-
-  // TTS streaming queue
-  const ttsEnabled = state.ttsEnabled
-  const ttsMuted = state.ttsMuted
-  let ttsQueue = ''
-
-  streamResponse(
-    state.activeThread.id,
-    userMessage,
-    (token, accumulated) => {
-      fullContent = accumulated
-
-      // Update streaming message
-      const msgs = getMessages(state.activeThread.id)
-      const aiMsg = msgs.find(m => m.role === 'assistant' && m.isStreaming)
-      if (aiMsg) {
-        aiMsg.content = fullContent
-        aiMsg.thinking = thinkingContent
-      }
-      render()
-
-      // TTS streaming
-      if (ttsEnabled && !ttsMuted) {
-        ttsQueue = fullContent
-        const sentences = ttsQueue.split(/(?<=[.!?])\s+/)
-        sentences.forEach(s => speak(s))
-      }
-
-      scrollToBottom()
-    },
-    (completeContent) => {
-      const msgs = getMessages(state.activeThread.id)
-      const aiMsg = msgs.find(m => m.role === 'assistant' && m.isStreaming)
-      if (aiMsg) {
-        aiMsg.isStreaming = false
-        aiMsg.content = completeContent
-      }
-
-      state.isLoading = false
-      state.isStreaming = false
-
-      // Complete TTS
-      if (ttsEnabled && !ttsMuted && completeContent.trim()) {
-        speak(completeContent)
-      }
-      render()
-      scrollToBottom()
-    },
-    (error) => {
-      console.error('Stream error:', error)
-      const msgs = getMessages(state.activeThread.id)
-      const aiMsg = msgs.find(m => m.role === 'assistant' && m.isStreaming)
-      if (aiMsg) {
-        aiMsg.isStreaming = false
-        aiMsg.content = `Error: ${error}`
-      }
-      state.isLoading = false
-      state.isStreaming = false
-      render()
-    }
-  )
 }
 
 function handleVoiceChat() {
-  if (state.isListening) {
-    stopListening()
-    state.isVoiceActive = false
-  } else {
-    if (!state.ttsEnabled) {
-      state.ttsEnabled = true
-      render()
-    }
-    startListening((text) => {
-      window.dispatchEvent(new CustomEvent('voice-transcript', { detail: text }))
-    })
-    state.inputText = ''
-    state.isVoiceActive = true
+  if (state.isListening) { stopListening(); state.isVoiceActive = false }
+  else {
+    if (!state.ttsEnabled) { state.ttsEnabled = true; render() }
+    startListening((text) => { window.dispatchEvent(new CustomEvent('voice-transcript', { detail: text })) })
+    state.inputText = ''; state.isVoiceActive = true
   }
 }
 
 function scrollToBottom() {
-  setTimeout(() => {
-    const container = document.querySelector('.scrollable-messages')
-    if (container) container.scrollTop = container.scrollHeight
-  }, 50)
+  setTimeout(() => { const container = document.querySelector('.scrollable-messages'); if (container) container.scrollTop = container.scrollHeight }, 50)
 }
 
 // Auto-send on silence
-let lastSentTranscript = ''
-let lastWordTime = 0
+let lastSentTranscript = '', lastWordTime = 0
 setInterval(() => {
-  if (!state.isListening) {
-    lastWordTime = 0
-    clearTimeout(window._voiceAutoSendTimeout)
-    return
-  }
-  if (!state.transcript.trim()) {
-    clearTimeout(window._voiceAutoSendTimeout)
-    return
-  }
+  if (!state.isListening) { lastWordTime = 0; clearTimeout(window._voiceAutoSendTimeout); return }
+  if (!state.transcript.trim()) { clearTimeout(window._voiceAutoSendTimeout); return }
   if (state.transcript === lastSentTranscript) return
-
   lastWordTime = Date.now()
   clearTimeout(window._voiceAutoSendTimeout)
-
   window._voiceAutoSendTimeout = setTimeout(() => {
-    const elapsed = Date.now() - lastWordTime
-    if (elapsed >= 1500 && state.transcript.trim()) {
-      handleSendMessage()
-      lastSentTranscript = state.transcript
-      state.inputText = ''
-    }
+    if (Date.now() - lastWordTime >= 1500 && state.transcript.trim()) { handleSendMessage(); lastSentTranscript = state.transcript; state.inputText = '' }
   }, 1500)
 }, 100)
 
-// ─── Message Bubble Component ────────────────────────────────────────────────
+// ─── Message Bubble ─────────────────────────────────────────────────────────
 
 function MessageBubble(message) {
   const isUser = message.role === 'user'
-
   const header = h('div', { className: 'flex items-center justify-between mb-2' },
     h('div', { className: 'flex items-center space-x-2' },
-      h('div', { className: `w-6 h-6 rounded-full flex items-center justify-center ${isUser ? 'bg-blue-700' : 'bg-gray-700'}` },
+      h('div', { className: 'w-6 h-6 rounded-full flex items-center justify-center ' + (isUser ? 'bg-blue-700' : 'bg-gray-700') },
         isUser ? Icon({ name: 'user', size: 12, className: 'text-white' }) : h('div', { className: 'w-2 h-2 bg-gray-600 rounded-full' })
       ),
       h('span', { className: 'text-sm font-medium text-gray-300' }, isUser ? 'You' : 'AI')
     ),
     h('div', { className: 'flex items-center space-x-2' },
-      h('button', {
-        className: 'p-1 rounded transition-colors hover:bg-gray-700 text-gray-400',
-        onClick: () => navigator.clipboard.writeText(message.content)
-      }, Icon({ name: 'copy', size: 12 }))
+      h('button', { className: 'p-1 rounded transition-colors hover:bg-gray-700 text-gray-400', onClick: () => navigator.clipboard.writeText(message.content) }, Icon({ name: 'copy', size: 12 }))
     )
   )
-
   const timeStr = new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   const timeEl = h('span', { className: 'text-xs text-gray-400' }, timeStr)
-
-  // Build content children
   const contentChildren = []
   if (message.isStreaming) {
-    if (message.thinking) {
-      contentChildren.push(
-        h('div', { className: 'mb-2 p-2 bg-yellow-100/20 border border-yellow-500/30 rounded text-yellow-300/80 text-xs italic whitespace-pre-wrap' },
-          '💭 ' + message.thinking
-        )
-      )
-    }
+    if (message.thinking) contentChildren.push(h('div', { className: 'mb-2 p-2 bg-yellow-100/20 border border-yellow-500/30 rounded text-yellow-300/80 text-xs italic whitespace-pre-wrap' }, '💭 ' + message.thinking))
     if (message.content && message.content.length > 0) {
-      const lines = message.content.split('\n')
-      const children = []
-      lines.forEach((line, i) => {
-        children.push(document.createTextNode(line))
-        if (i < lines.length - 1) children.push(h('br'))
-      })
+      const lines = message.content.split('\n'), children = []
+      lines.forEach((line, i) => { children.push(document.createTextNode(line)); if (i < lines.length - 1) children.push(h('br')) })
       contentChildren.push(h('div', { className: 'mb-2 whitespace-pre-wrap' }, ...children))
     }
     contentChildren.push(
       h('div', { className: 'flex items-center space-x-2' },
         h('div', { className: 'flex space-x-1' },
-          [1, 2, 3].map(i => h('div', {
-            key: i,
-            className: 'w-1 bg-gray-400 rounded-full animate-pulse',
-            style: { height: `${Math.random() * 8 + 4}px`, animationDelay: `${i * 0.1}s` }
-          }))
+          [1, 2, 3].map(i => h('div', { className: 'w-1 bg-gray-400 rounded-full animate-pulse', style: { height: (Math.random() * 8 + 4) + 'px', animationDelay: (i * 0.1) + 's' } }))
         ),
         h('span', { className: 'text-gray-500' }, 'Thinking...')
       )
     )
   } else {
-    const lines = message.content.split('\n')
-    const children = []
-    lines.forEach((line, i) => {
-      children.push(document.createTextNode(line))
-      if (i < lines.length - 1) children.push(h('br'))
-    })
+    const lines = message.content.split('\n'), children = []
+    lines.forEach((line, i) => { children.push(document.createTextNode(line)); if (i < lines.length - 1) children.push(h('br')) })
     contentChildren.push(h('div', { className: 'whitespace-pre-wrap' }, ...children))
   }
-
-  const bubbleClass = isUser
-    ? 'bg-blue-600 text-white'
-    : 'bg-gray-800 border border-gray-700 text-white'
-
-  return h('div', { className: `flex ${isUser ? 'justify-end' : 'justify-start'} mb-4` },
-    h('div', { className: `max-w-[80%] rounded-lg p-4 relative ${bubbleClass}` },
-      header,
-      timeEl,
-      h('div', { className: 'max-w-none' },
-        h('div', { className: 'text-sm leading-relaxed' }, ...contentChildren)
-      )
-    )
+  const bubbleClass = isUser ? 'bg-blue-600 text-white' : 'bg-gray-800 border border-gray-700 text-white'
+  return h('div', { className: 'flex ' + (isUser ? 'justify-end' : 'justify-start') + ' mb-4' },
+    h('div', { className: 'max-w-[80%] rounded-lg p-4 relative ' + bubbleClass }, header, timeEl, h('div', { className: 'max-w-none' }, h('div', { className: 'text-sm leading-relaxed' }, ...contentChildren)))
   )
 }
 
@@ -588,58 +327,34 @@ function App() {
 
   // Sidebar
   const sidebar = h('div', {
-    className: `${state.isCollapsed ? 'w-16' : 'w-80'} border-r border-gray-800 bg-gray-900 flex flex-col transition-all duration-300`
+    className: (state.isCollapsed ? 'w-16' : 'w-80') + ' border-r border-gray-800 bg-gray-900 flex flex-col transition-all duration-300'
   },
     h('div', { className: 'p-6 border-b border-gray-800' },
       h('div', { className: 'flex items-center justify-between' },
         !state.isCollapsed && h('h1', { className: 'text-xl font-bold' }, 'VoiceChat'),
         h('div', { className: 'flex items-center gap-2' },
-          h('button', {
-            className: 'p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800',
-            onClick: () => { state.isCollapsed = !state.isCollapsed; render() }
-          }, Icon({ name: state.isCollapsed ? 'plus' : 'x', size: 20 })),
-          !state.isCollapsed && h('button', {
-            className: 'p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800',
-            onClick: () => { state.darkMode = !state.darkMode; render() }
-          }, Icon({ name: 'sun', size: 20 }))
+          h('button', { className: 'p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800', onClick: () => { state.isCollapsed = !state.isCollapsed; render() } }, Icon({ name: state.isCollapsed ? 'plus' : 'x', size: 20 })),
+          !state.isCollapsed && h('button', { className: 'p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800', onClick: () => { state.darkMode = !state.darkMode; render() } }, Icon({ name: 'sun', size: 20 }))
         )
       ),
-      !state.isCollapsed && h('button', {
-        className: 'w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors font-medium',
-        onClick: handleNewThread
-      }, Icon({ name: 'plus', size: 16 }), 'New Chat')
+      !state.isCollapsed && h('button', { className: 'w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors font-medium', onClick: handleNewThread }, Icon({ name: 'plus', size: 16 }), 'New Chat')
     ),
-
     h('div', { className: 'flex-1 overflow-y-auto scrollbar-hide' },
       state.isCollapsed ? h('div', { className: 'p-4 space-y-2' },
-        ...state.threads.slice(0, 5).map(t => h('button', {
-          key: t.id,
-          className: `w-full p-2 rounded-lg flex items-center justify-center transition-colors ${state.activeThread?.id === t.id ? 'bg-gray-800 text-blue-400' : 'text-gray-400 hover:bg-gray-800'}`,
-          onClick: () => { state.activeThread = t; render() }
-        }, Icon({ name: 'message-square', size: 16 })))
+        ...state.threads.slice(0, 5).map(t => h('button', { className: 'w-full p-2 rounded-lg flex items-center justify-center transition-colors ' + (state.activeThread && state.activeThread.id === t.id ? 'bg-gray-800 text-blue-400' : 'text-gray-400 hover:bg-gray-800'), onClick: () => { state.activeThread = t; render() } }, Icon({ name: 'message-square', size: 16 })))
       ) : state.threads.length === 0
-        ? h('div', { className: 'p-8 text-center text-gray-400' },
-            h('div', { className: 'text-gray-400 text-sm' }, 'No conversations yet')
-          )
+        ? h('div', { className: 'p-8 text-center text-gray-400' }, h('div', { className: 'text-gray-400 text-sm' }, 'No conversations yet'))
         : state.threads.map(thread => h('div', {
-            key: thread.id,
-            className: `p-4 border-b border-gray-800 cursor-pointer transition-colors ${state.activeThread?.id === thread.id ? 'bg-gray-800 border-l-4 border-blue-500' : 'hover:bg-gray-800'}`,
+            className: 'p-4 border-b border-gray-800 cursor-pointer transition-colors ' + (state.activeThread && state.activeThread.id === thread.id ? 'bg-gray-800 border-l-4 border-blue-500' : 'hover:bg-gray-800'),
             onClick: () => { state.activeThread = thread; render() }
           },
             h('div', { className: 'flex items-center justify-between' },
               h('div', { className: 'flex-1 min-w-0' },
                 h('div', { className: 'font-medium truncate text-sm' }, thread.title),
                 thread.providerName && h('div', { className: 'text-xs truncate mt-1 text-gray-400' }, thread.providerName),
-                h('div', { className: 'text-xs mt-1 text-gray-500' },
-                  thread.updatedAt && !isNaN(new Date(thread.updatedAt))
-                    ? new Date(thread.updatedAt).toLocaleDateString()
-                    : 'Just now'
-                )
+                h('div', { className: 'text-xs mt-1 text-gray-500' }, thread.updatedAt && !isNaN(new Date(thread.updatedAt)) ? new Date(thread.updatedAt).toLocaleDateString() : 'Just now')
               ),
-              h('button', {
-                className: 'p-1 rounded transition-colors hover:bg-red-900 text-red-400',
-                onClick: (e) => { e.stopPropagation(); handleDeleteThread(thread.id) }
-              }, Icon({ name: 'trash-2', size: 14 }))
+              h('button', { className: 'p-1 rounded transition-colors hover:bg-red-900 text-red-400', onClick: (e) => { e.stopPropagation(); handleDeleteThread(thread.id) } }, Icon({ name: 'trash-2', size: 14 }))
             )
           ))
     )
@@ -648,7 +363,6 @@ function App() {
   // Main content
   const mainContent = state.activeThread
     ? h('div', { className: 'flex-1 flex flex-col min-h-0 bg-white' },
-        // Header
         h('div', { className: 'border-b px-6 py-4 flex-shrink-0 border-gray-200 bg-white' },
           h('div', { className: 'flex items-center justify-between' },
             h('div', null,
@@ -658,11 +372,7 @@ function App() {
             h('div', { className: 'flex items-center gap-3' },
               state.isSpeaking && h('div', { className: 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-100' },
                 h('div', { className: 'flex space-x-1' },
-                  [1, 2, 3].map(i => h('div', {
-                    key: i,
-                    className: 'w-1 rounded-full animate-pulse bg-cyan-600',
-                    style: { height: `${4 + i * 3}px` }
-                  }))
+                  [1, 2, 3].map(i => h('div', { className: 'w-1 rounded-full animate-pulse bg-cyan-600', style: { height: (4 + i * 3) + 'px' } }))
                 ),
                 h('span', { className: 'text-xs text-cyan-600' }, 'Speaking...'),
                 h('button', { onClick: stopTts, className: 'p-1 rounded hover:bg-cyan-500/30 text-cyan-600' }, Icon({ name: 'volume-x', size: 14 }))
@@ -673,16 +383,11 @@ function App() {
                   h('span', { className: 'text-xs font-medium text-orange-600' }, state.isRecording ? 'Recording...' : 'Listening...')
                 ),
                 showWaveform && h('div', { className: 'flex items-center' }, WaveformBars({ level: state.audioLevel, isActive: true })),
-                h('button', {
-                  onClick: handleVoiceChat,
-                  className: 'p-1 rounded-full hover:bg-red-500/30 text-red-600'
-                }, Icon({ name: 'stop-circle', size: 16 }))
+                h('button', { onClick: handleVoiceChat, className: 'p-1 rounded-full hover:bg-red-500/30 text-red-600' }, Icon({ name: 'stop-circle', size: 16 }))
               )
             )
           )
         ),
-
-        // Messages
         h('div', { className: 'flex-1 min-h-0 overflow-y-auto scrollable-messages bg-gray-50' },
           h('div', { className: 'px-6 py-4 min-h-full' },
             h('div', { className: 'max-w-4xl mx-auto space-y-4' },
@@ -691,13 +396,106 @@ function App() {
                 h('div', { className: 'max-w-[80%] rounded-lg p-4 bg-gray-800 border border-gray-700 text-white' },
                   h('div', { className: 'flex items-center space-x-2' },
                     h('div', { className: 'flex space-x-1' },
-                      [1, 2, 3].map(i => h('div', {
-                        key: i,
-                        className: 'w-1 bg-gray-400 rounded-full animate-pulse',
-                        style: { height: `${Math.random() * 8 + 4}px`, animationDelay: `${i * 0.1}s` }
-                      }))
+                      [1, 2, 3].map(i => h('div', { className: 'w-1 bg-gray-400 rounded-full animate-pulse', style: { height: (Math.random() * 8 + 4) + 'px', animationDelay: (i * 0.1) + 's' } }))
                     ),
                     h('span', { className: 'text-gray-500' }, 'Thinking...')
                   )
                 )
               )
+            )
+          )
+        ),
+        h('div', { className: 'border-t px-6 py-4 flex-shrink-0 border-gray-200 bg-white' },
+          h('div', { className: 'max-w-4xl mx-auto' },
+            h('div', { className: 'flex items-center gap-3 mb-3' },
+              h('div', { className: 'relative flex-1 max-w-[180px]' },
+                h('select', { className: 'w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900', onChange: (e) => { state.selectedProvider = e.target.value; render() }, value: state.selectedProvider },
+                  ...state.providers.map(p => h('option', { value: p.id }, p.name))
+                ),
+                Icon({ name: 'chevron-down', size: 14, className: 'absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400' })
+              ),
+              h('div', { className: 'relative flex-1 max-w-[180px]' },
+                h('select', { className: 'w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 bg-white border-gray-300 text-gray-900', onChange: (e) => { state.selectedModel = e.target.value; render() }, value: state.selectedModel, disabled: !state.selectedProvider },
+                  h('option', { value: '' }, 'Model'),
+                  ...(provider && provider.models ? provider.models.map(m => h('option', { value: m.id }, m.name)) : [])
+                ),
+                Icon({ name: 'chevron-down', size: 14, className: 'absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400' })
+              ),
+              h('button', { className: 'p-2 rounded-lg transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300', title: 'Refresh Models' }, Icon({ name: 'refresh-cw', size: 16 })),
+              state.isVoiceActive && h('div', { className: 'flex items-center gap-1' },
+                h('button', { onClick: () => { state.voiceMode = 'continuous'; render() }, className: 'p-1.5 rounded transition-colors ' + (state.voiceMode === 'continuous' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300') }, Icon({ name: 'radio', size: 14 })),
+                h('button', { onClick: () => { state.voiceMode = 'push-to-talk'; render() }, className: 'p-1.5 rounded transition-colors ' + (state.voiceMode === 'push-to-talk' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300') }, Icon({ name: 'hand', size: 14 }))
+              ),
+              state.voiceMode === 'push-to-talk' && state.isVoiceActive
+                ? h('button', { className: 'p-2 rounded-lg transition-colors relative ' + (state.isRecording ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-orange-600/30 text-orange-400 border border-orange-500/50') },
+                    Icon({ name: 'mic', size: 16 }),
+                    state.isRecording && h('span', { className: 'absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse' })
+                  )
+                : h('button', { onClick: handleVoiceChat, className: 'p-2 rounded-lg transition-colors relative ' + (isVoiceActiveState ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300') },
+                    Icon({ name: 'mic', size: 16 }),
+                    isVoiceActiveState && h('span', { className: 'absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse' })
+                  ),
+              h('button', {
+                onClick: () => { state.ttsEnabled = !state.ttsEnabled; render() },
+                className: 'p-2 rounded-lg transition-colors ' + (state.ttsEnabled && !state.ttsMuted ? 'bg-cyan-500 hover:bg-cyan-600 text-white' : state.ttsEnabled && state.ttsMuted ? 'bg-amber-100 hover:bg-amber-200 text-amber-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300')
+              }, state.ttsEnabled ? (state.ttsMuted ? Icon({ name: 'volume-x', size: 18 }) : Icon({ name: 'volume-2', size: 18 })) : Icon({ name: 'settings', size: 18, className: 'opacity-50' }))
+            ),
+            h('div', { className: 'flex items-end space-x-3' },
+              h('div', { className: 'flex-1 relative' },
+                h('textarea', {
+                  className: 'w-full border rounded-lg p-3 pr-24 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] max-h-[120px] transition-all bg-white border-gray-300 text-gray-900 placeholder-gray-500' + (isVoiceActiveState && !state.isRecording ? ' border-gray-300' : isVoiceActiveState && state.isRecording ? ' border-orange-500 ring-2 ring-orange-500/20' : isVoiceActiveState ? ' border-red-500 ring-2 ring-red-500/20' : ''),
+                  value: state.inputText,
+                  onInput: (e) => { state.inputText = e.target.value; render() },
+                  onKeyDown: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } },
+                  placeholder: isVoiceActiveState ? (state.voiceMode === 'push-to-talk' ? (state.isRecording ? 'Speak now... (release to send)' : 'Hold mic button to record') : (state.isRecording ? 'Speak now...' : 'Listening...')) : 'Type your message...',
+                  rows: 1,
+                  disabled: isVoiceActiveState && !state.isRecording
+                }),
+                isVoiceActiveState && h('div', { className: 'absolute top-2 right-2 flex items-center space-x-2' },
+                  state.audioLevel > 0 && h('div', { className: 'flex items-center gap-0.5' },
+                    h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: Math.min(20, state.audioLevel / 5) + 'px' } }),
+                    h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: Math.min(20, state.audioLevel / 4) + 'px', animationDelay: '0.1s' } }),
+                    h('div', { className: 'w-1 bg-orange-500 rounded-full animate-pulse', style: { height: Math.min(20, state.audioLevel / 3) + 'px', animationDelay: '0.2s' } })
+                  ),
+                  h('span', { className: 'text-xs text-orange-600' }, state.isRecording ? 'Recording...' : 'Listening...')
+                ),
+                state.selectedProvider && !isVoiceActiveState && h('div', { className: 'absolute bottom-2 right-2 flex items-center space-x-2' },
+                  h('span', { className: 'text-xs px-2 py-1 rounded text-gray-500 bg-gray-100' },
+                    (state.providers.find(p => p.id === state.selectedProvider) && state.providers.find(p => p.id === state.selectedProvider).name || 'Provider') +
+                    (state.selectedModel && ' \u2022 ' + (provider && provider.models && provider.models.find(m => m.id === state.selectedModel) && provider.models.find(m => m.id === state.selectedModel).name || 'Model'))
+                  )
+                )
+              ),
+              h('button', { onClick: handleSendMessage, disabled: !state.inputText || !state.inputText.trim() || state.isLoading, className: 'p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors' }, Icon({ name: 'send', size: 18 }))
+            ),
+            isVoiceActiveState && h('div', { className: 'mt-2 text-center text-xs text-gray-400' },
+              state.voiceMode === 'push-to-talk' ? 'Hold mic button to record \u2022 Release to send' : 'Speak to send \u2022 Auto-sends after 1.5s silence'
+            )
+          )
+        )
+      )
+    : h('div', { className: 'flex-1 flex items-center justify-center bg-gray-900' },
+        h('div', { className: 'text-center max-w-md px-6' },
+          h('div', { className: 'w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-gray-800' },
+            h('svg', { className: 'text-blue-400', fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 32, height: 32 },
+              h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' })
+            )
+          ),
+          h('h1', { className: 'text-2xl font-semibold mb-2' }, 'VoiceChat'),
+          h('p', { className: 'mb-6 text-gray-400' }, 'Select a conversation or create a new one to start chatting with AI'),
+          h('button', { onClick: handleNewThread, className: 'bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors' }, 'Create New Chat')
+        )
+      )
+
+  return h('div', { className: 'flex h-screen bg-black text-white' }, sidebar, h('div', { className: 'flex-1 flex flex-col min-w-0' }, mainContent))
+}
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+
+function render() {
+  const root = document.getElementById('root')
+  root.innerHTML = ''
+  root.appendChild(App())
+}
+
+render()
