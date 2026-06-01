@@ -7,7 +7,57 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              background: {
+                primary: '#0D0D0D',
+                secondary: '#161616',
+                tertiary: '#1F1F1F'
+              },
+              accent: {
+                primary: '#FF6B35',
+                secondary: '#00D9FF',
+                tertiary: '#A855F7'
+              },
+              text: {
+                primary: '#FAFAFA',
+                secondary: '#A1A1A1',
+                tertiary: '#6B6B6B'
+              }
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+              inter: ['Inter', 'sans-serif']
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: 'Inter', sans-serif;
+        background: #0D0D0D;
+        color: #FAFAFA;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

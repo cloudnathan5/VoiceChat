@@ -1,89 +1,184 @@
 // VoiceChat Demo — static, no server required
-// Uses only browser APIs: Web Speech API + SSE for streaming
+// Visual clone of the main app with browser TTS only + SSE streaming
+
+// ─── SVG Icon Components ─────────────────────────────────────────────────────
+
+function Icon({ name, size = 20, className = '', ...props }) {
+  const icons = {
+    'plus': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />,
+    'x': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />,
+    'trash-2': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6" />,
+    'settings': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />,
+    'message-square': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />,
+    'send': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />,
+    'mic': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />,
+    'volume-2': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />,
+    'volume-x': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />,
+    'stop-circle': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />,
+    'chevron-down': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />,
+    'refresh-cw': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M23 4v6h-6M1 20v-6h6" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />,
+    'radio': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.9 19.1C7.7 21.9 11.9 23.3 16.1 21.9c4.2-1.4 7.3-5.3 7.9-9.7.6-4.4-1.4-8.7-5.1-10.7-1-.6-2.1-.9-3.2-.9" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 16v-4m0 0l-2 2m2-2l2 2" />,
+    'hand': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 11V6a2 2 0 00-4 0v1M14 10V4a2 2 0 00-4 0v6m0-6v9M6 10V7a2 2 0 00-4 0v9a2 2 0 004 0v-3m10 0h.01" />,
+    'copy': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />,
+    'user': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" />,
+    'sun': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />,
+    'moon': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />,
+    'test-tube': <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />,
+  }
+  return (
+    <svg
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      className={className}
+      {...props}
+    >
+      {icons[name] || null}
+    </svg>
+  )
+}
+
+// ─── Waveform Component ──────────────────────────────────────────────────────
+
+function WaveformBars({ level, isActive }) {
+  const barCount = 24
+  const bars = []
+  for (let i = 0; i < barCount; i++) {
+    const waveOffset = Math.sin((i / barCount) * Math.PI * 2) * 0.5 + 0.5
+    const barHeight = Math.max(4, (level / 128) * 40 * waveOffset + 4)
+    bars.push(
+      <div
+        key={i}
+        className={`rounded-full transition-all ${
+          isActive
+            ? level > 20
+              ? 'bg-orange-500'
+              : 'bg-red-500/50'
+            : 'bg-gray-600'
+        }`}
+        style={{
+          width: '3px',
+          height: `${barHeight}px`,
+          transitionDelay: `${i / barCount * 0.3}s`,
+          transitionDuration: '100ms'
+        }}
+      />
+    )
+  }
+  return <div className="flex items-end justify-center gap-0.5 h-10">{bars}</div>
+}
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
-let threads = []
-let activeThread = null
-let messages = {}
-let darkMode = true
-let ttsEnabled = false
-let ttsMuted = false
-let selectedProvider = 'demo'
-let selectedModel = 'gpt-4o'
-let isStreaming = false
-let isLoading = false
-
-// ─── Provider config ─────────────────────────────────────────────────────────
-
-const PROVIDERS = [{
-  id: 'demo',
-  name: 'Demo (OpenAI-compatible)',
-  baseUrl: 'https://api.openai.com/v1',
-  apiKey: '',
-  models: [
-    { id: 'gpt-4o', name: 'GPT-4o' },
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini' }
-  ]
-}]
-
-function getProvider() {
-  return PROVIDERS.find(p => p.id === selectedProvider)
+const state = {
+  threads: [],
+  activeThread: null,
+  messages: {},
+  providers: [{
+    id: 'demo',
+    name: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: '',
+    models: [
+      { id: 'gpt-4o', name: 'GPT-4o' },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' }
+    ]
+  }],
+  models: {},
+  lastUsedProviderId: null,
+  lastUsedModelId: null,
+  darkMode: true,
+  ttsEnabled: false,
+  ttsMuted: false,
+  selectedProvider: 'demo',
+  selectedModel: 'gpt-4o',
+  isStreaming: false,
+  isLoading: false,
+  isVoiceActive: false,
+  isListening: false,
+  isRecording: false,
+  isSpeaking: false,
+  isInterrupting: false,
+  voiceMode: 'continuous',
+  transcript: '',
+  audioLevel: 0,
+  userStartedSpeaking: false,
+  showTtsMenu: false,
+  isAddingProvider: false,
+  isTesting: false,
+  isCollapsed: false,
+  inputText: '',
+  formData: { name: '', baseUrl: '', apiKey: '' }
 }
 
-// ─── SSE streaming (replaces socket.io) ─────────────────────────────────────
+function getMessages(threadId) {
+  return state.messages[threadId] || []
+}
+
+// ─── SSE Streaming (replaces socket.io) ─────────────────────────────────────
 
 async function streamResponse(threadId, userMessage, onToken, onComplete, onError) {
-  const provider = getProvider()
-  const threadMessages = messages[threadId] || []
-  const conversation = [...threadMessages, userMessage]
-
-  const response = await fetch(`${provider.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${provider.apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: selectedModel,
-      messages: conversation.map(m => ({ role: m.role, content: m.content })),
-      max_tokens: 2000,
-      stream: true
-    })
-  })
-
-  if (!response.ok) {
-    const err = await response.text()
-    onError(err)
+  const provider = state.providers.find(p => p.id === state.selectedProvider)
+  if (!provider) {
+    onError('No provider selected')
     return
   }
 
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let fullContent = ''
+  const threadMessages = getMessages(threadId)
+  const conversation = [...threadMessages, userMessage]
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
+  try {
+    const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${provider.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: state.selectedModel,
+        messages: conversation.map(m => ({ role: m.role, content: m.content })),
+        max_tokens: 2000,
+        stream: true
+      })
+    })
 
-    const chunk = decoder.decode(value)
-    const lines = chunk.split('\n')
+    if (!response.ok) {
+      const err = await response.text()
+      onError(err)
+      return
+    }
 
-    for (const line of lines) {
-      if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-        try {
-          const data = JSON.parse(line.slice(6))
-          const content = data.choices?.[0]?.delta?.content || ''
-          if (content) {
-            fullContent += content
-            onToken(content, fullContent)
-          }
-        } catch {}
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let fullContent = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      const chunk = decoder.decode(value)
+      const lines = chunk.split('\n')
+
+      for (const line of lines) {
+        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          try {
+            const data = JSON.parse(line.slice(6))
+            const content = data.choices?.[0]?.delta?.content || ''
+            if (content) {
+              fullContent += content
+              onToken(content, fullContent)
+            }
+          } catch {}
+        }
       }
     }
-  }
 
-  onComplete(fullContent)
+    onComplete(fullContent)
+  } catch (error) {
+    onError(error.message)
+  }
 }
 
 // ─── TTS (browser only) ─────────────────────────────────────────────────────
@@ -93,19 +188,18 @@ let currentUtterance = null
 let isSpeaking = false
 
 function speak(text) {
-  if (!synth || !text.trim() || ttsMuted) return
-  stop()
+  if (!synth || !text.trim() || state.ttsMuted) return
+  stopTts()
 
   const sentences = text.split(/(?<=[.!?])\s+/)
   if (sentences.length === 0) return
 
   let index = 0
   const speakNext = () => {
-    if (index >= sentences.length || ttsMuted) {
+    if (index >= sentences.length || state.ttsMuted) {
       isSpeaking = false
       return
     }
-
     currentUtterance = new SpeechSynthesisUtterance(sentences[index])
     currentUtterance.rate = 1.1
     currentUtterance.pitch = 1.0
@@ -114,7 +208,6 @@ function speak(text) {
       index++
       setTimeout(speakNext, 50)
     }
-
     currentUtterance.onerror = () => {
       isSpeaking = false
     }
@@ -122,7 +215,6 @@ function speak(text) {
     synth.speak(currentUtterance)
     isSpeaking = true
   }
-
   speakNext()
 }
 
@@ -130,20 +222,14 @@ function stopTts() {
   if (synth) synth.cancel()
   currentUtterance = null
   isSpeaking = false
+  state.isSpeaking = false
+  render()
 }
 
 // ─── Speech Recognition ─────────────────────────────────────────────────────
 
 let recognition = null
 let recognitionRef = null
-let isListening = false
-let isRecording = false
-let transcript = ''
-let audioLevel = 0
-let voiceMode = 'continuous'
-let isInterrupting = false
-let userStartedSpeaking = false
-let userStartedSpeakingRef = false
 
 function setupSpeechRecognition(onFinalTranscript, onInterim) {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -165,25 +251,26 @@ function setupSpeechRecognition(onFinalTranscript, onInterim) {
         if (onFinalTranscript) onFinalTranscript(finalTranscript.trim())
       } else {
         interimTranscript += t
-        if (t.trim()) onInterim(t.trim())
+        if (t.trim()) onInterim && onInterim(t.trim())
       }
     }
 
     const live = finalTranscript + interimTranscript
-    transcript = live.trim()
-    onFinalTranscript && onFinalTranscript(finalTranscript.trim())
+    state.transcript = live.trim()
+    render()
   }
 
   recognition.onerror = (event) => {
     console.error('Speech recognition error:', event.error)
     if (event.error === 'not-allowed') {
-      isListening = false
-      isRecording = false
+      state.isListening = false
+      state.isRecording = false
+      render()
     }
   }
 
   recognition.onend = () => {
-    if (isListening || isRecording) {
+    if (state.isListening || state.isRecording) {
       try { recognition.start() } catch (e) {}
     }
   }
@@ -198,14 +285,15 @@ async function startListening(onTranscript) {
         if (onTranscript) onTranscript(finalText)
       },
       (interimText) => {
-        if (interimText.trim()) userStartedSpeakingRef = true
+        if (interimText.trim()) state.userStartedSpeaking = true
       }
     )
     if (!rec) throw new Error('SpeechRecognition not supported')
     recognitionRef = rec
     rec.start()
-    isListening = true
-    transcript = ''
+    state.isListening = true
+    state.transcript = ''
+    render()
     return true
   } catch (e) {
     console.error(e)
@@ -218,550 +306,716 @@ function stopListening() {
     recognitionRef.stop()
     recognitionRef = null
   }
-  isListening = false
-  transcript = ''
+  state.isListening = false
+  state.transcript = ''
+  render()
 }
 
-// ─── Message actions ─────────────────────────────────────────────────────────
-
-function addMessage(threadId, message) {
-  if (!messages[threadId]) messages[threadId] = []
-  messages[threadId].push(message)
-}
-
-function getMessages(threadId) {
-  return messages[threadId] || []
-}
-
-// ─── React-like rendering (vanilla DOM) ──────────────────────────────────────
-
-function h(tag, attrs, ...children) {
-  const el = document.createElement(tag)
-  if (attrs) {
-    Object.entries(attrs).forEach(([k, v]) => {
-      if (k === 'className') el.className = v
-      else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v)
-      else if (k === 'dangerouslySetInnerHTML') el.innerHTML = v.__html
-      else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2).toLowerCase(), v)
-      else if (k === 'ref' && typeof v === 'function') v(el)
-      else el.setAttribute(k, v)
-    })
-  }
-  children.flat().forEach(c => {
-    if (c == null) return
-    if (typeof c === 'string' || typeof c === 'number') el.append(String(c))
-    else if (c instanceof Node) el.appendChild(c)
-  })
-  return el
-}
-
-function render() {
-  const root = document.getElementById('root')
-  root.innerHTML = ''
-  root.appendChild(renderApp())
-}
-
-function renderApp() {
-  return h('div', {
-    className: `flex h-screen font-inter ${darkMode ? 'bg-gray-950' : 'bg-white'}`
-  },
-    renderSidebar(),
-    h('div', { className: 'flex-1 flex flex-col min-w-0' },
-      activeThread ? renderChatArea() : renderEmptyState()
-    )
-  )
-}
-
-function renderSidebar() {
-  return h('div', {
-    className: `w-80 border-r flex flex-col transition-all duration-300 ${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'}`
-  },
-    h('div', {
-      className: `p-6 border-b ${darkMode ? 'border-gray-800' : 'border-gray-200'}`
-    },
-      h('div', { className: 'flex items-center justify-between mb-4' },
-        h('h1', { className: `text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}` }, 'VoiceChat'),
-        h('div', { className: 'flex items-center gap-2' },
-          h('button', {
-            className: `p-2 rounded-lg transition-colors ${darkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`,
-            onClick: () => { darkMode = !darkMode; render() },
-            title: darkMode ? 'Switch to light mode' : 'Switch to dark mode'
-          }, darkMode ? renderSunIcon() : renderMoonIcon())
-        )
-      ),
-      h('button', {
-        className: 'w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors font-medium',
-        onClick: handleNewThread
-      },
-        h('span', null, '+'),
-        'New Chat'
-      )
-    ),
-    h('div', { className: 'flex-1 overflow-y-auto scrollbar-hide' },
-      threads.length === 0
-        ? h('div', { className: `p-8 text-center ${darkMode ? 'text-gray-400' : 'text-gray-600'}` },
-            'No conversations yet'
-          )
-        : threads.map(t =>
-            h('div', {
-              key: t.id,
-              className: `p-4 border-b cursor-pointer transition-colors ${darkMode ? 'border-gray-800' : 'border-gray-200'} ${activeThread?.id === t.id ? (darkMode ? 'bg-gray-800 border-l-4 border-blue-500' : 'bg-blue-50 border-l-4 border-blue-500') : (darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100')}`,
-              onClick: () => { activeThread = t; render() }
-            },
-              h('div', { className: 'flex items-center justify-between' },
-                h('div', { className: 'flex-1 min-w-0' },
-                  h('div', { className: `font-medium truncate text-sm ${darkMode ? 'text-white' : 'text-gray-900'}` }, t.title),
-                  t.providerName && h('div', { className: `text-xs truncate mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}` }, t.providerName),
-                  h('div', { className: `text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}` },
-                    t.updatedAt && !isNaN(new Date(t.updatedAt)) ? new Date(t.updatedAt).toLocaleDateString() : 'Just now'
-                  )
-                ),
-                h('button', {
-                  className: `p-1 rounded transition-colors ${darkMode ? 'hover:bg-red-900 text-red-400' : 'hover:bg-red-100 text-red-500'}`,
-                  onClick: (e) => { e.stopPropagation(); handleDeleteThread(t.id) }
-                }, renderTrashIcon())
-              )
-            )
-          )
-    )
-  )
-}
-
-function renderEmptyState() {
-  return h('div', {
-    className: `flex-1 flex items-center justify-center ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`
-  },
-    h('div', { className: 'text-center max-w-md px-6' },
-      h('div', {
-        className: `w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${darkMode ? 'bg-gray-800' : 'bg-blue-100'}`
-      },
-        h('svg', { className: `${darkMode ? 'text-blue-400' : 'text-blue-600'}`, fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 32, height: 32 },
-          h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' })
-        )
-      ),
-      h('h1', { className: `text-2xl font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}` }, 'VoiceChat'),
-      h('p', { className: `mb-6 ${darkMode ? 'text-gray-400' : 'text-gray-600'}` },
-        'Select a conversation or create a new one to start chatting with AI'
-      ),
-      h('button', {
-        className: 'bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors',
-        onClick: handleNewThread
-      }, 'Create New Chat')
-    )
-  )
-}
-
-function renderChatArea() {
-  const threadMessages = getMessages(activeThread.id) || []
-  const isVoiceActiveState = (isListening || isRecording)
-
-  return h('div', {
-    className: `flex-1 flex flex-col min-h-0 ${darkMode ? 'bg-gray-950' : 'bg-white'}`
-  },
-    // Header
-    h('div', {
-      className: `border-b px-6 py-4 flex-shrink-0 ${darkMode ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}`
-    },
-      h('div', { className: 'flex items-center justify-between' },
-        h('div', null,
-          h('h2', { className: `text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}` }, activeThread.title),
-          activeThread.providerName && h('p', { className: `${darkMode ? 'text-gray-400 text-sm' : 'text-gray-600 text-sm'}` }, activeThread.providerName)
-        ),
-        h('div', { className: 'flex items-center gap-3' },
-          isSpeaking && h('div', {
-            className: `flex items-center gap-2 px-3 py-1.5 rounded-full ${darkMode ? 'bg-cyan-600/20' : 'bg-cyan-100'}`
-          },
-            h('div', { className: 'flex space-x-1' }, [1,2,3].map(i =>
-              h('div', {
-                key: i,
-                className: `w-1 rounded-full animate-pulse ${darkMode ? 'bg-cyan-400' : 'bg-cyan-600'}`,
-                style: { height: `${4 + i * 3}px` }
-              })
-            )),
-            h('span', { className: `text-xs ${darkMode ? 'text-cyan-400' : 'text-cyan-600'}` }, 'Speaking...'),
-            h('button', {
-              className: `p-1 rounded hover:bg-cyan-500/30 ${darkMode ? 'text-cyan-400' : 'text-cyan-600'}`,
-              onClick: stopTts
-            }, renderVolumeXIcon())
-          ),
-          isVoiceActiveState && h('div', {
-            className: `flex items-center gap-3 px-3 py-2 rounded-full ${darkMode ? 'bg-orange-600/20' : 'bg-orange-100'}`
-          },
-            h('div', { className: 'flex items-center gap-2' },
-              h('div', { className: 'w-2 h-2 bg-red-500 rounded-full animate-pulse' }),
-              h('span', { className: `text-xs font-medium ${darkMode ? 'text-orange-400' : 'text-orange-600'}` },
-                isRecording ? 'Recording...' : 'Listening...'
-              )
-            ),
-            h('button', {
-              className: `p-1 rounded-full hover:bg-red-500/30 ${darkMode ? 'text-red-400' : 'text-red-600'}`,
-              onClick: toggleVoiceChat
-            }, renderStopCircleIcon())
-          )
-        )
-      )
-    ),
-
-    // Messages
-    h('div', { className: 'flex-1 min-h-0 overflow-y-auto scrollbar-hide' },
-      h('div', { className: `px-6 py-4 min-h-full ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}` },
-        h('div', { className: 'max-w-4xl mx-auto space-y-4' },
-          threadMessages.map(m => renderMessageBubble(m)),
-          isStreaming && h('div', { className: 'flex justify-start' },
-            h('div', { className: `max-w-[80%] rounded-lg p-4 ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'}` },
-              h('div', { className: 'flex items-center space-x-2' },
-                h('div', { className: 'flex space-x-1' }, [1,2,3].map(i =>
-                  h('div', {
-                    key: i,
-                    className: 'w-1 bg-gray-400 rounded-full animate-pulse',
-                    style: { height: `${Math.random() * 8 + 4}px`, animationDelay: `${i * 0.1}s` }
-                  })
-                )),
-                h('span', { className: `text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}` }, 'Thinking...')
-              )
-            )
-          )
-        )
-      )
-    ),
-
-    // Input area
-    h('div', {
-      className: `border-t px-6 py-4 flex-shrink-0 ${darkMode ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}`
-    },
-      h('div', { className: 'max-w-4xl mx-auto' },
-        // Provider/Model controls
-        h('div', { className: 'flex items-center gap-3 mb-3' },
-          h('select', {
-            className: `w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`,
-            value: selectedProvider,
-            onChange: (e) => { selectedProvider = e.target.value; render() }
-          },
-            PROVIDERS.map(p => h('option', { key: p.id, value: p.id }, p.name))
-          ),
-          h('select', {
-            className: `w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`,
-            value: selectedModel,
-            onChange: (e) => { selectedModel = e.target.value; render() }
-          },
-            getProvider()?.models?.map(m => h('option', { key: m.id, value: m.id }, m.name)) || []
-          ),
-          h('button', {
-            className: `p-2 rounded-lg transition-colors ${darkMode ? 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'}`,
-            onClick: () => {
-              ttsEnabled = !ttsEnabled
-              render()
-            },
-            title: ttsEnabled ? 'Disable TTS' : 'Enable TTS'
-          },
-            ttsEnabled ? renderVolume2Icon() : renderVolumeXIcon()
-          ),
-          h('button', {
-            className: `p-2 rounded-lg transition-colors ${darkMode ? 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'}`,
-            onClick: () => {
-              ttsMuted = !ttsMuted
-              render()
-            },
-            title: ttsMuted ? 'Unmute TTS' : 'Mute TTS'
-          },
-            ttsMuted ? renderVolumeXIcon() : renderVolume2Icon()
-          ),
-          h('button', {
-            className: `p-2 rounded-lg transition-colors relative ${isVoiceActiveState ? 'bg-red-500 hover:bg-red-600 text-white' : (darkMode ? 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300')}`,
-            onClick: toggleVoiceChat,
-            title: isVoiceActiveState ? 'Stop voice chat' : 'Start voice chat'
-          },
-            renderMicIcon(),
-            isVoiceActiveState && h('span', { className: 'absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse' })
-          )
-        ),
-
-        // Message input
-        h('div', { className: 'flex items-end space-x-3' },
-          h('textarea', {
-            ref: (el) => { if (el) {
-              el.value = window._inputText || ''
-              el.placeholder = isVoiceActiveState ? (isRecording ? 'Speak now... (release to send)' : 'Listening...') : 'Type your message...'
-              el.oninput = () => { window._inputText = el.value; render() }
-              el.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }
-              el.disabled = isVoiceActiveState && !isRecording
-            }},
-            className: `w-full border rounded-lg p-3 pr-24 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] max-h-[120px] transition-all ${darkMode ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'} ${isVoiceActiveState ? (isRecording ? 'border-orange-500 ring-2 ring-orange-500/20' : 'border-red-500 ring-2 ring-red-500/20') : ''}`
-          }),
-          h('button', {
-            className: 'p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors',
-            disabled: !window._inputText?.trim() || isLoading,
-            onClick: handleSendMessage
-          }, renderSendIcon())
-        ),
-
-        isVoiceActiveState && h('div', { className: `mt-2 text-center text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}` },
-          voiceMode === 'push-to-talk'
-            ? 'Hold mic button to record • Release to send'
-            : 'Speak to send • Auto-sends after 1.5s silence'
-        )
-      )
-    )
-  )
-}
-
-function renderMessageBubble(msg) {
-  const isUser = msg.role === 'user'
-  return h('div', { className: `flex ${isUser ? 'justify-end' : 'justify-start'} mb-4` },
-    h('div', {
-      className: `max-w-[80%] rounded-lg p-4 relative ${isUser ? 'bg-blue-600 text-white' : (darkMode ? 'bg-gray-800 border border-gray-700 text-white' : 'bg-white border border-gray-200 text-gray-900')}`
-    },
-      h('div', { className: 'flex items-center justify-between mb-2' },
-        h('div', { className: 'flex items-center space-x-2' },
-          h('div', {
-            className: `w-6 h-6 rounded-full flex items-center justify-center ${isUser ? 'bg-blue-700' : (darkMode ? 'bg-gray-700' : 'bg-gray-200')}`
-          },
-            h('svg', { className: 'text-white', fill: 'currentColor', viewBox: '0 0 24 24', width: 12, height: 12 },
-              h('path', { d: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z' })
-            )
-          ),
-          h('span', { className: `text-sm font-medium ${isUser ? 'text-white' : (darkMode ? 'text-gray-300' : 'text-gray-700')}` }, isUser ? 'You' : 'AI')
-        ),
-        h('div', { className: 'flex items-center space-x-2' },
-          h('button', {
-            className: `p-1 rounded transition-colors ${isUser ? 'hover:bg-blue-700 text-blue-100' : (darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500')}`,
-            onClick: () => navigator.clipboard.writeText(msg.content)
-          }, renderCopyIcon()),
-          h('span', { className: `text-xs ${isUser ? 'text-blue-200' : (darkMode ? 'text-gray-400' : 'text-gray-500')}` },
-            new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          )
-        )
-      ),
-      h('div', { className: 'max-w-none' },
-        h('div', { className: 'text-sm leading-relaxed' },
-          msg.content.split('\n').map((line, i) => h('span', { key: i }, line, i < msg.content.split('\n').length - 1 ? h('br') : null))
-        )
-      )
-    )
-  )
-}
-
-// ─── Icons ───────────────────────────────────────────────────────────────────
-
-function renderMicIcon() {
-  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 16, height: 16 },
-    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z' })
-  )
-}
-
-function renderSendIcon() {
-  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 18, height: 18 },
-    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 19l9 2-9-18-9 18 9-2zm0 0v-8' })
-  )
-}
-
-function renderCopyIcon() {
-  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 12, height: 12 },
-    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z' })
-  )
-}
-
-function renderTrashIcon() {
-  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 14, height: 14 },
-    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' })
-  )
-}
-
-function renderStopCircleIcon() {
-  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 16, height: 16 },
-    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M21 12a9 9 0 11-18 0 9 9 0 0118 0z M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z' })
-  )
-}
-
-function renderVolume2Icon() {
-  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 18, height: 18 },
-    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z' })
-  )
-}
-
-function renderVolumeXIcon() {
-  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 18, height: 18 },
-    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2' })
-  )
-}
-
-function renderSunIcon() {
-  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 20, height: 20 },
-    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z' })
-  )
-}
-
-function renderMoonIcon() {
-  return h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24', width: 20, height: 20 },
-    h('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z' })
-  )
-}
-
-// ─── Event handlers ──────────────────────────────────────────────────────────
+// ─── Event Handlers ─────────────────────────────────────────────────────────
 
 function handleNewThread() {
   const id = Date.now().toString()
   const thread = {
     id,
-    title: `Chat ${threads.length + 1}`,
-    providerName: getProvider()?.name,
+    title: `Chat ${state.threads.length + 1}`,
+    providerName: state.selectedProvider,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }
-  threads = [thread, ...threads]
-  messages[id] = []
-  activeThread = thread
+  state.threads = [thread, ...state.threads]
+  state.messages[id] = []
+  state.activeThread = thread
   render()
 }
 
 function handleDeleteThread(id) {
   if (confirm('Are you sure you want to delete this thread?')) {
-    threads = threads.filter(t => t.id !== id)
-    delete messages[id]
-    if (activeThread?.id === id) activeThread = null
+    state.threads = state.threads.filter(t => t.id !== id)
+    delete state.messages[id]
+    if (state.activeThread?.id === id) state.activeThread = null
     render()
   }
 }
 
 function handleSendMessage() {
-  const text = window._inputText?.trim()
-  if (!text || !activeThread || isLoading) return
+  const text = state.inputText?.trim()
+  if (!text || !state.activeThread || state.isLoading) return
 
-  // Stop any ongoing speech
   stopTts()
+  state.userStartedSpeaking = false
 
   const userMessage = {
     id: Date.now().toString(),
-    threadId: activeThread.id,
+    threadId: state.activeThread.id,
     role: 'user',
     content: text,
     createdAt: new Date().toISOString()
   }
 
-  addMessage(activeThread.id, userMessage)
-  window._inputText = ''
-  isLoading = true
-  isStreaming = true
+  state.messages[state.activeThread.id].push(userMessage)
+  state.inputText = ''
+  state.isLoading = true
+  state.isStreaming = true
   render()
 
   // Scroll to bottom
-  setTimeout(() => {
-    const container = document.querySelector('.overflow-y-auto')
-    if (container) container.scrollTop = container.scrollHeight
-  }, 50)
+  setTimeout(scrollToBottom, 50)
+
+  // Create streaming AI message
+  const streamingMessageId = (Date.now() + 1).toString()
+  state.messages[state.activeThread.id].push({
+    id: streamingMessageId,
+    threadId: state.activeThread.id,
+    role: 'assistant',
+    content: '',
+    createdAt: new Date().toISOString(),
+    modelId: state.selectedModel,
+    isStreaming: true
+  })
+
+  let fullContent = ''
+  let thinkingContent = ''
+
+  // TTS streaming queue
+  const ttsEnabled = state.ttsEnabled
+  const ttsMuted = state.ttsMuted
+  let ttsQueue = ''
 
   streamResponse(
-    activeThread.id,
+    state.activeThread.id,
     userMessage,
-    (token, fullContent) => {
-      // Update the streaming AI message in place
-      const threadMessages = messages[activeThread.id]
-      const aiMsg = threadMessages.find(m => m.role === 'assistant' && m.isStreaming)
+    (token, accumulated) => {
+      fullContent = accumulated
+
+      // Update streaming message
+      const msgs = getMessages(state.activeThread.id)
+      const aiMsg = msgs.find(m => m.role === 'assistant' && m.isStreaming)
       if (aiMsg) {
         aiMsg.content = fullContent
-      } else {
-        addMessage(activeThread.id, {
-          id: (Date.now() + 1).toString(),
-          threadId: activeThread.id,
-          role: 'assistant',
-          content: fullContent,
-          createdAt: new Date().toISOString(),
-          isStreaming: true
-        })
+        aiMsg.thinking = thinkingContent
       }
       render()
 
-      // Scroll to bottom
-      setTimeout(() => {
-        const container = document.querySelector('.overflow-y-auto')
-        if (container) container.scrollTop = container.scrollHeight
-      }, 50)
-
-      // TTS streaming
+      // TTS streaming — speak as we get tokens
       if (ttsEnabled && !ttsMuted) {
-        speak(fullContent)
+        ttsQueue = fullContent
+        // Speak sentences that are complete
+        const sentences = ttsQueue.split(/(?<=[.!?])\s+/)
+        sentences.forEach(s => speak(s))
       }
+
+      scrollToBottom()
     },
-    (fullContent) => {
-      // Mark streaming as complete
-      const threadMessages = messages[activeThread.id]
-      const aiMsg = threadMessages.find(m => m.role === 'assistant' && m.isStreaming)
+    (completeContent) => {
+      const msgs = getMessages(state.activeThread.id)
+      const aiMsg = msgs.find(m => m.role === 'assistant' && m.isStreaming)
       if (aiMsg) {
         aiMsg.isStreaming = false
+        aiMsg.content = completeContent
       }
 
-      isLoading = false
-      isStreaming = false
+      state.isLoading = false
+      state.isStreaming = false
 
-      // Complete TTS
-      if (ttsEnabled && !ttsMuted && fullContent.trim()) {
-        speak(fullContent)
+      // Complete TTS — speak remaining partial content
+      if (ttsEnabled && !ttsMuted && completeContent.trim()) {
+        speak(completeContent)
       }
       render()
-
-      // Scroll to bottom
-      setTimeout(() => {
-        const container = document.querySelector('.overflow-y-auto')
-        if (container) container.scrollTop = container.scrollHeight
-      }, 50)
+      scrollToBottom()
     },
     (error) => {
       console.error('Stream error:', error)
-      isLoading = false
-      isStreaming = false
+      const msgs = getMessages(state.activeThread.id)
+      const aiMsg = msgs.find(m => m.role === 'assistant' && m.isStreaming)
+      if (aiMsg) {
+        aiMsg.isStreaming = false
+        aiMsg.content = `Error: ${error}`
+      }
+      state.isLoading = false
+      state.isStreaming = false
       render()
     }
   )
 }
 
+function handleVoiceChat() {
+  if (state.isListening) {
+    stopListening()
+    state.isVoiceActive = false
+  } else {
+    // Auto-enable TTS when entering voice mode
+    if (!state.ttsEnabled) {
+      state.ttsEnabled = true
+      render()
+    }
+    startListening((text) => {
+      window.dispatchEvent(new CustomEvent('voice-transcript', { detail: text }))
+    })
+    state.inputText = ''
+    state.isVoiceActive = true
+  }
+}
+
+function scrollToBottom() {
+  setTimeout(() => {
+    const container = document.querySelector('.scrollable-messages')
+    if (container) container.scrollTop = container.scrollHeight
+  }, 50)
+}
+
+// Auto-send on silence
 let lastSentTranscript = ''
 let lastWordTime = 0
-
-function handleVoiceAutoSend() {
-  if (!isListening) {
+setInterval(() => {
+  if (!state.isListening) {
     lastWordTime = 0
     clearTimeout(window._voiceAutoSendTimeout)
     return
   }
-  if (!transcript.trim()) {
+  if (!state.transcript.trim()) {
     clearTimeout(window._voiceAutoSendTimeout)
     return
   }
-  if (transcript === lastSentTranscript) return
+  if (state.transcript === lastSentTranscript) return
 
   lastWordTime = Date.now()
   clearTimeout(window._voiceAutoSendTimeout)
 
   window._voiceAutoSendTimeout = setTimeout(() => {
     const elapsed = Date.now() - lastWordTime
-    if (elapsed >= 1500 && transcript.trim()) {
+    if (elapsed >= 1500 && state.transcript.trim()) {
       handleSendMessage()
-      lastSentTranscript = transcript
-      window._inputText = ''
+      lastSentTranscript = state.transcript
+      state.inputText = ''
     }
   }, 1500)
+}, 100)
+
+// ─── Message Bubble Component ────────────────────────────────────────────────
+
+function MessageBubble({ message }) {
+  const isUser = message.role === 'user'
+
+  return (
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
+      <div className={`max-w-[80%] rounded-lg p-4 relative ${
+        isUser
+          ? 'bg-blue-600 text-white'
+          : 'bg-gray-800 border border-gray-700 text-white'
+      }`}>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center space-x-2">
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center ${
+              isUser ? 'bg-blue-700' : 'bg-gray-700'
+            }`}>
+              {isUser ? (
+                <Icon name="user" size={12} className="text-white" />
+              ) : (
+                <div className="w-2 h-2 bg-gray-600 rounded-full"></div>
+              )}
+            </div>
+            <span className="text-sm font-medium text-gray-300">
+              {isUser ? 'You' : 'AI'}
+            </span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              className="p-1 rounded transition-colors hover:bg-gray-700 text-gray-400"
+              onClick={() => navigator.clipboard.writeText(message.content)}
+              title="Copy message"
+            >
+              <Icon name="copy" size={12} />
+            </button>
+            <span className="text-xs text-gray-400">
+              {new Date(message.createdAt).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit'
+              })}
+            </span>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="max-w-none">
+          <div className="text-sm leading-relaxed">
+            {message.isStreaming ? (
+              <div>
+                {message.thinking && (
+                  <div className="mb-2 p-2 bg-yellow-100/20 border border-yellow-500/30 rounded text-yellow-300/80 text-xs italic whitespace-pre-wrap">
+                    💭 {message.thinking}
+                  </div>
+                )}
+                {message.content && message.content.length > 0 && (
+                  <div className="mb-2 whitespace-pre-wrap">
+                    {message.content.split('\n').map((line, i) => (
+                      <span key={i}>
+                        {line}
+                        {i < message.content.split('\n').length - 1 && <br />}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center space-x-2">
+                  <div className="flex space-x-1">
+                    {[1, 2, 3].map(i => (
+                      <div
+                        key={i}
+                        className="w-1 bg-gray-400 rounded-full animate-pulse"
+                        style={{
+                          height: `${Math.random() * 8 + 4}px`,
+                          animationDelay: `${i * 0.1}s`
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <span className="text-gray-500">Thinking...</span>
+                </div>
+              </div>
+            ) : (
+              <div className="whitespace-pre-wrap">
+                {message.content.split('\n').map((line, i) => (
+                  <span key={i}>
+                    {line}
+                    {i < message.content.split('\n').length - 1 && <br />}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
-function toggleVoiceChat() {
-  if (isListening) {
-    stopListening()
-    isListening = false
-  } else {
-    startListening((text) => {
-      window.dispatchEvent(new CustomEvent('voice-transcript', { detail: text }))
-    })
-    window._inputText = ''
-    isListening = true
-  }
-  render()
+// ─── Main App ────────────────────────────────────────────────────────────────
+
+function App() {
+  const threadMessages = state.activeThread ? getMessages(state.activeThread.id) : []
+  const isVoiceActiveState = state.isVoiceActive && (state.isListening || state.isRecording)
+  const showWaveform = isVoiceActiveState && state.audioLevel > 0
+  const provider = state.providers.find(p => p.id === state.selectedProvider)
+
+  return (
+    <div className="flex h-screen bg-black text-white">
+      {/* Sidebar */}
+      <div className={`${state.isCollapsed ? 'w-16' : 'w-80'} border-r border-gray-800 bg-gray-900 flex flex-col transition-all duration-300`}>
+        <div className="p-6 border-b border-gray-800">
+          <div className="flex items-center justify-between">
+            {!state.isCollapsed && (
+              <h1 className="text-xl font-bold">VoiceChat</h1>
+            )}
+            <div className="flex items-center gap-2">
+              <button
+                className="p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
+                title={state.isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                onClick={() => { state.isCollapsed = !state.isCollapsed; render() }}
+              >
+                {state.isCollapsed ? <Icon name="plus" size={20} /> : <Icon name="x" size={20} />}
+              </button>
+              {!state.isCollapsed && (
+                <>
+                  <button
+                    className="p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
+                    title="Switch to light mode"
+                    onClick={() => { state.darkMode = !state.darkMode; render() }}
+                  >
+                    <Icon name="sun" size={20} />
+                  </button>
+                  <button
+                    className="p-2 rounded-lg transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
+                    title="Settings"
+                    onClick={() => { state.showTtsMenu = !state.showTtsMenu; render() }}
+                  >
+                    <Icon name="settings" size={20} />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+          {!state.isCollapsed && (
+            <button
+              onClick={handleNewThread}
+              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors font-medium"
+            >
+              <Icon name="plus" size={16} /> New Chat
+            </button>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto scrollbar-hide">
+          {state.isCollapsed ? (
+            <div className="p-4 space-y-2">
+              {state.threads.slice(0, 5).map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => { state.activeThread = t; render() }}
+                  className={`w-full p-2 rounded-lg flex items-center justify-center transition-colors ${
+                    state.activeThread?.id === t.id ? 'bg-gray-800 text-blue-400' : 'text-gray-400 hover:bg-gray-800'
+                  }`}
+                  title={t.title}
+                >
+                  <Icon name="message-square" size={16} />
+                </button>
+              ))}
+            </div>
+          ) : (
+            state.threads.length === 0 ? (
+              <div className="p-8 text-center text-gray-400">
+                <Icon name="message-square" size={48} className="mx-auto mb-4 opacity-50" />
+                <p className="text-sm">No conversations yet</p>
+              </div>
+            ) : (
+              state.threads.map(thread => (
+                <div
+                  key={thread.id}
+                  onClick={() => { state.activeThread = thread; render() }}
+                  className={`p-4 border-b border-gray-800 cursor-pointer transition-colors ${
+                    state.activeThread?.id === thread.id
+                      ? 'bg-gray-800 border-l-4 border-blue-500'
+                      : 'hover:bg-gray-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate text-sm">{thread.title}</div>
+                      {thread.providerName && (
+                        <div className="text-xs truncate mt-1 text-gray-400">{thread.providerName}</div>
+                      )}
+                      <div className="text-xs mt-1 text-gray-500">
+                        {thread.updatedAt && !isNaN(new Date(thread.updatedAt))
+                          ? new Date(thread.updatedAt).toLocaleDateString()
+                          : 'Just now'}
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteThread(thread.id) }}
+                      className="p-1 rounded transition-colors hover:bg-red-900 text-red-400"
+                    >
+                      <Icon name="trash-2" size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )
+          )}
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {!state.activeThread ? (
+          // Empty State
+          <div className="flex-1 flex items-center justify-center bg-gray-900">
+            <div className="text-center max-w-md px-6">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-gray-800">
+                <svg className="text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" width="32" height="32">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <h1 className="text-2xl font-semibold mb-2">VoiceChat</h1>
+              <p className="mb-6 text-gray-400">
+                Select a conversation or create a new one to start chatting with AI
+              </p>
+              <button
+                onClick={handleNewThread}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+              >
+                Create New Chat
+              </button>
+            </div>
+          </div>
+        ) : (
+          // Chat Area
+          <div className="flex-1 flex flex-col min-h-0 bg-white">
+            {/* Header */}
+            <div className="border-b px-6 py-4 flex-shrink-0 border-gray-200 bg-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">{state.activeThread.title}</h2>
+                  {state.activeThread.providerName && (
+                    <p className="text-gray-600 text-sm">{state.activeThread.providerName}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  {isSpeaking && (
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-cyan-100">
+                      <div className="flex space-x-1">
+                        {[1, 2, 3].map(i => (
+                          <div key={i} className="w-1 rounded-full animate-pulse bg-cyan-600" style={{ height: `${4 + i * 3}px` }} />
+                        ))}
+                      </div>
+                      <span className="text-xs text-cyan-600">Speaking...</span>
+                      <button onClick={stopTts} className="p-1 rounded hover:bg-cyan-500/30 text-cyan-600">
+                        <Icon name="volume-x" size={14} />
+                      </button>
+                    </div>
+                  )}
+                  {isVoiceActiveState && (
+                    <div className="flex items-center gap-3 px-3 py-2 rounded-full bg-orange-100">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                        <span className="text-xs font-medium text-orange-600">
+                          {state.isRecording ? 'Recording...' : 'Listening...'}
+                        </span>
+                      </div>
+                      {showWaveform && (
+                        <div className="flex items-center">
+                          <WaveformBars level={state.audioLevel} isActive={true} />
+                        </div>
+                      )}
+                      <button
+                        onClick={handleVoiceChat}
+                        className="p-1 rounded-full hover:bg-red-500/30 text-red-600"
+                        title="Stop voice chat"
+                      >
+                        <Icon name="stop-circle" size={16} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 min-h-0 overflow-y-auto scrollable-messages bg-gray-50">
+              <div className="px-6 py-4 min-h-full">
+                <div className="max-w-4xl mx-auto space-y-4">
+                  {threadMessages.map((message) => (
+                    <MessageBubble key={message.id} message={message} />
+                  ))}
+                  {state.isStreaming && (
+                    <div className="flex justify-start">
+                      <div className="max-w-[80%] rounded-lg p-4 bg-gray-800 border border-gray-700 text-white">
+                        <div className="flex items-center space-x-2">
+                          <div className="flex space-x-1">
+                            {[1, 2, 3].map(i => (
+                              <div
+                                key={i}
+                                className="w-1 bg-gray-400 rounded-full animate-pulse"
+                                style={{ height: `${Math.random() * 8 + 4}px`, animationDelay: `${i * 0.1}s` }}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-gray-500">Thinking...</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Input Area */}
+            <div className="border-t px-6 py-4 flex-shrink-0 border-gray-200 bg-white">
+              <div className="max-w-4xl mx-auto">
+                {/* Provider/Model Controls Row */}
+                <div className="flex items-center gap-3 mb-3">
+                  {/* Provider Selector */}
+                  <div className="relative flex-1 max-w-[180px]">
+                    <select
+                      className="w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white border-gray-300 text-gray-900"
+                      onChange={(e) => { state.selectedProvider = e.target.value; render() }}
+                      value={state.selectedProvider}
+                    >
+                      {state.providers.map(provider => (
+                        <option key={provider.id} value={provider.id}>{provider.name}</option>
+                      ))}
+                    </select>
+                    <Icon name="chevron-down" size={14} className="absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400" />
+                  </div>
+
+                  {/* Model Selector */}
+                  <div className="relative flex-1 max-w-[180px]">
+                    <select
+                      className="w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 bg-white border-gray-300 text-gray-900"
+                      onChange={(e) => { state.selectedModel = e.target.value; render() }}
+                      value={state.selectedModel}
+                      disabled={!state.selectedProvider}
+                    >
+                      <option value="">Model</option>
+                      {provider?.models?.map(model => (
+                        <option key={model.id} value={model.id}>{model.name}</option>
+                      ))}
+                    </select>
+                    <Icon name="chevron-down" size={14} className="absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400" />
+                  </div>
+
+                  {/* Refresh Button */}
+                  <button
+                    className="p-2 rounded-lg transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300"
+                    title="Refresh Models"
+                  >
+                    <Icon name="refresh-cw" size={16} />
+                  </button>
+
+                  {/* Voice Mode Toggle */}
+                  {state.isVoiceActive && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => { state.voiceMode = 'continuous'; render() }}
+                        className={`p-1.5 rounded transition-colors ${
+                          state.voiceMode === 'continuous'
+                            ? 'bg-orange-600 text-white'
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300'
+                        }`}
+                        title="Continuous mode"
+                      >
+                        <Icon name="radio" size={14} />
+                      </button>
+                      <button
+                        onClick={() => { state.voiceMode = 'push-to-talk'; render() }}
+                        className={`p-1.5 rounded transition-colors ${
+                          state.voiceMode === 'push-to-talk'
+                            ? 'bg-orange-600 text-white'
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-300'
+                        }`}
+                        title="Push-to-talk"
+                      >
+                        <Icon name="hand" size={14} />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Voice Chat Toggle */}
+                  {state.voiceMode === 'push-to-talk' && state.isVoiceActive ? (
+                    <button
+                      className={`p-2 rounded-lg transition-colors relative ${
+                        state.isRecording
+                          ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                          : 'bg-orange-600/30 text-orange-400 border border-orange-500/50'
+                      }`}
+                      title={state.isRecording ? 'Recording... release to send' : 'Hold to record'}
+                    >
+                      <Icon name="mic" size={16} />
+                      {state.isRecording && (
+                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleVoiceChat}
+                      className={`p-2 rounded-lg transition-colors relative ${
+                        isVoiceActiveState
+                          ? 'bg-red-500 hover:bg-red-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
+                      }`}
+                      title={isVoiceActiveState ? 'Stop voice chat' : 'Start voice chat'}
+                    >
+                      <Icon name="mic" size={16} />
+                      {isVoiceActiveState && (
+                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                      )}
+                    </button>
+                  )}
+
+                  {/* TTS Toggle */}
+                  <button
+                    onClick={() => { state.ttsEnabled = !state.ttsEnabled; render() }}
+                    className={`p-2 rounded-lg transition-colors ${
+                      state.ttsEnabled && !state.ttsMuted
+                        ? 'bg-cyan-500 hover:bg-cyan-600 text-white'
+                        : state.ttsEnabled && state.ttsMuted
+                          ? 'bg-amber-100 hover:bg-amber-200 text-amber-600'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
+                    }`}
+                    title={state.ttsEnabled ? (state.ttsMuted ? 'Unmute TTS' : 'Mute TTS') : 'Enable TTS'}
+                  >
+                    {state.ttsEnabled ? (
+                      state.ttsMuted ? <Icon name="volume-x" size={18} /> : <Icon name="volume-2" size={18} />
+                    ) : (
+                      <Icon name="settings" size={18} className="opacity-50" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Message Input Row */}
+                <div className="flex items-end space-x-3">
+                  <div className="flex-1 relative">
+                    <textarea
+                      value={state.inputText}
+                      onChange={(e) => { state.inputText = e.target.value; render() }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }}
+                      placeholder={
+                        isVoiceActiveState
+                          ? (state.voiceMode === 'push-to-talk'
+                              ? (state.isRecording ? 'Speak now... (release to send)' : 'Hold mic button to record')
+                              : (state.isRecording ? 'Speak now...' : 'Listening...'))
+                          : 'Type your message...'
+                      }
+                      className={`w-full border rounded-lg p-3 pr-24 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] max-h-[120px] transition-all bg-white border-gray-300 text-gray-900 placeholder-gray-500 ${
+                        isVoiceActiveState
+                          ? (state.isRecording ? 'border-orange-500 ring-2 ring-orange-500/20' : 'border-red-500 ring-2 ring-red-500/20')
+                          : ''
+                      }`}
+                      rows={1}
+                      disabled={isVoiceActiveState && !state.isRecording}
+                    />
+
+                    {/* Voice Status Indicator */}
+                    {isVoiceActiveState && (
+                      <div className="absolute top-2 right-2 flex items-center space-x-2">
+                        {state.audioLevel > 0 && (
+                          <div className="flex items-center gap-0.5">
+                            <div className="w-1 bg-orange-500 rounded-full animate-pulse" style={{ height: `${Math.min(20, state.audioLevel / 5)}px` }} />
+                            <div className="w-1 bg-orange-500 rounded-full animate-pulse" style={{ height: `${Math.min(20, state.audioLevel / 4)}px`, animationDelay: '0.1s' }} />
+                            <div className="w-1 bg-orange-500 rounded-full animate-pulse" style={{ height: `${Math.min(20, state.audioLevel / 3)}px`, animationDelay: '0.2s' }} />
+                          </div>
+                        )}
+                        <span className="text-xs text-orange-600">
+                          {state.isRecording ? 'Recording...' : 'Listening...'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Quick Provider Info */}
+                    {state.selectedProvider && !isVoiceActiveState && (
+                      <div className="absolute bottom-2 right-2 flex items-center space-x-2">
+                        <span className="text-xs px-2 py-1 rounded text-gray-500 bg-gray-100">
+                          {state.providers.find(p => p.id === state.selectedProvider)?.name || 'Provider'}
+                          {state.selectedModel && ' • ' + (provider?.models?.find(m => m.id === state.selectedModel)?.name || 'Model')}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Send Button */}
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={!state.inputText.trim() || state.isLoading}
+                    className="p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                  >
+                    <Icon name="send" size={18} />
+                  </button>
+                </div>
+
+                {/* Voice Mode Hint */}
+                {isVoiceActiveState && (
+                  <div className="mt-2 text-center text-xs text-gray-400">
+                    {state.voiceMode === 'push-to-talk'
+                      ? 'Hold mic button to record • Release to send'
+                      : 'Speak to send • Auto-sends after 1.5s silence'
+                    }
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
-// ─── Auto-send effect ────────────────────────────────────────────────────────
+// ─── Render ──────────────────────────────────────────────────────────────────
 
-setInterval(handleVoiceAutoSend, 100)
+function render() {
+  const root = document.getElementById('root')
+  root.innerHTML = ''
+  root.appendChild(App())
+}
 
-// ─── Init ────────────────────────────────────────────────────────────────────
-
-window._inputText = ''
-
+// Initial render
 render()
