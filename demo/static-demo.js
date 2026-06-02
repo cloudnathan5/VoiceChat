@@ -263,6 +263,12 @@ window.io = function(url, opts) {
       console.log('[VoiceChat] Stream data:', data);
       console.log('[VoiceChat] All providers:', JSON.stringify(_providers()));
       console.log('[VoiceChat] Looking for providerId:', providerId);
+      console.log('[VoiceChat] Thread messages:', JSON.stringify(_messages()[threadId]));
+      console.log('[VoiceChat] Thread selected_provider_id:', data);
+      // Also check localStorage for thread state
+      const allThreads = JSON.parse(localStorage.getItem('vc_threads') || '[]');
+      const thread = allThreads.find(t => t.id === threadId);
+      console.log('[VoiceChat] Thread from localStorage:', thread ? JSON.stringify(thread) : 'not found');
 
       const provider = _providers().find(p => p.id === providerId);
       if (!provider) {
