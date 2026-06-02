@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import io from 'socket.io-client'
+import io from './socket-mock.js'
 
 // Voice chat hook with VAD + live transcription + auto-send
 export function useVoiceChat() {
