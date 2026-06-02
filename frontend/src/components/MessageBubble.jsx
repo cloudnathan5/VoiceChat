@@ -60,7 +60,7 @@ function MessageBubble({ message }) {
                 <div className="w-2 h-2 bg-gray-600 rounded-full"></div>
               )}
             </div>
-            <span className={`text-sm font-medium ${isUser ? 'text-white' : darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+            <span className={`text-sm font-medium ${isUser ? 'text-white' : darkMode ? 'text-gray-400' : 'text-gray-700'}`}>
               {isUser ? 'You' : 'AI'}
             </span>
           </div>
@@ -96,7 +96,9 @@ function MessageBubble({ message }) {
               <div>
                 {/* Show accumulated thinking tokens if available */}
                 {message.thinking && (
-                  <div className="mb-2 p-2 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-xs italic whitespace-pre-wrap">
+                  <div className={`mb-2 p-2 rounded text-xs italic whitespace-pre-wrap ${
+                    darkMode ? 'bg-yellow-900/30 border border-yellow-700/50 text-yellow-300' : 'bg-yellow-100 border border-yellow-300 text-yellow-800'
+                  }`}>
                     💭 {message.thinking}
                   </div>
                 )}
@@ -112,7 +114,9 @@ function MessageBubble({ message }) {
                     {[1, 2, 3].map(i => (
                       <div
                         key={i}
-                        className="w-1 bg-gray-400 rounded-full animate-pulse"
+                        className={`w-1 rounded-full animate-pulse ${
+                          darkMode ? 'bg-gray-500' : 'bg-gray-400'
+                        }`}
                         style={{
                           height: `${Math.random() * 8 + 4}px`,
                           animationDelay: `${i * 0.1}s`

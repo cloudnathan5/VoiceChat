@@ -2,65 +2,126 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VoiceChat Demo</title>
+    <title>VoiceChat</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
     <script>
-      window.tailwindConfig = {
-        darkMode: 'class',
-        theme: {
-          extend: {
-            colors: {
-              background: {
-                primary: '#0D0D0D',
-                secondary: '#161616',
-                tertiary: '#1F1F1F'
-              },
-              accent: {
-                primary: '#FF6B35',
-                secondary: '#00D9FF',
-                tertiary: '#A855F7'
-              },
-              text: {
-                primary: '#FAFAFA',
-                secondary: '#A1A1A1',
-                tertiary: '#6B6B6B'
-              }
-            },
-            fontFamily: {
-              sans: ['Inter', 'sans-serif'],
-              mono: ['JetBrains Mono', 'monospace'],
-              inter: ['Inter', 'sans-serif']
-            }
+      // Store original fetch for SSE streaming
+      window._originalFetch = window.fetch;
+      // Mark as demo mode
+      window.__DEMO__ = true;
+      window.__DEMO_MODE__ = true;
+
+      // ─── LocalStorage-backed store (replaces API calls) ──────────────────────
+      const Store = {
+        _get(key) { try { return JSON.parse(localStorage.getItem('vc_' + key)) } catch { return null } },
+        _set(key, val) { localStorage.setItem('vc_' + key, JSON.stringify(val)) },
+        _del(key) { localStorage.removeItem('vc_' + key) },
+        providers: () => Store._get('providers') || [],
+        setProviders: (p) => Store._set('providers', p),
+        threads: () => Store._get('threads') || [],
+        setThreads: (t) => Store._set('threads', t),
+        activeThread: () => Store._get('activeThread'),
+        setActiveThread: (t) => Store._set('activeThread', t),
+        messages: (tid) => {
+          const all = Store._get('messages') || {}
+          return all[tid] || []
+        },
+        setMessages: (tid, msgs) => {
+          const all = Store._get('messages') || {}
+          all[tid] = msgs
+          Store._set('messages', all)
+        },
+        addMessage: (tid, msg) => {
+          const msgs = Store.messages(tid)
+          msgs.push(msg)
+          Store.setMessages(tid, msgs)
+        },
+        updateMessage: (tid, id, updates) => {
+          const msgs = Store.messages(tid)
+          const idx = msgs.findIndex(m => m.id === id)
+          if (idx >= 0) { msgs[idx] = { ...msgs[idx], ...updates } }
+          Store.setMessages(tid, msgs)
+        },
+        models: () => Store._get('models') || {},
+        setModels: (m) => Store._set('models', m),
+        lastUsed: () => Store._get('lastUsed') || {},
+        setLastUsed: (l) => Store._set('lastUsed', l),
+        darkMode: () => Store._get('darkMode'),
+        setDarkMode: (v) => Store._set('darkMode', v),
+        ttsEnabled: () => Store._get('ttsEnabled'),
+        setTtsEnabled: (v) => Store._set('ttsEnabled', v),
+        ttsMuted: () => Store._get('ttsMuted'),
+        setTtsMuted: (v) => Store._set('ttsMuted', v),
+        preferredVoice: () => Store._get('preferredVoice'),
+        setPreferredVoice: (v) => Store._set('preferredVoice', v),
+        voiceState: () => Store._get('voiceState'),
+        setVoiceState: (v) => Store._set('voiceState', v),
+        streamingMessages: () => Store._get('streamingMessages') || {},
+        setStreamingMessages: (v) => Store._set('streamingMessages', v),
+        isLoading: () => Store._get('isLoading'),
+        setIsLoading: (v) => Store._set('isLoading', v),
+        isStreaming: () => Store._get('isStreaming'),
+        setIsStreaming: (v) => Store._set('isStreaming', v),
+      };
+
+      // ─── Patch fetch to intercept API calls ──────────────────────────────────
+      window.fetch = async (input, init) => {
+        const url = typeof input === 'string' ? input : input.url;
+        const method = (init && init.method) || 'GET';
+
+        // ── Providers ──
+        if (url === '/api/providers') {
+          if (method === 'POST') {
+            const body = init && init.body ? JSON.parse(init.body) : {};
+            const provider = { id: 'demo-' + Date.now(), name: body.name || 'New Provider', baseUrl: body.baseUrl || '', apiKey: body.apiKey || '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+            const providers = Store.providers();
+            providers.push(provider);
+            Store.setProviders(providers);
+            return { ok: true, json: () => Promise.resolve(provider) };
           }
+          return { ok: true, json: () => Promise.resolve(Store.providers()) };
         }
-      }
-    </script>
-    <script defer src="https://cdn.tailwindcss.com"></script>
-    <style>
-      .scrollbar-hide {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-      }
-      .scrollbar-hide::-webkit-scrollbar {
-        display: none;
-      }
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      body {
-        font-family: 'Inter', sans-serif;
-        background: #0D0D0D;
-        color: #FAFAFA;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="app.js"></script>
-  </body>
-</html>
+        if (url.match(/\/api\/providers\/([^/]+)\/models/)) {
+          const pid = url.match(/\/api\/providers\/([^/]+)\/models/)[1];
+          const models = Store.models()[pid] || [
+            { id: 'gpt-4o', name: 'GPT-4o' },
+            { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+            { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' }
+          ];
+          return { ok: true, json: () => Promise.resolve(models) };
+        }
+        if (url.match(/\/api\/providers\/([^/]+)$/)) {
+          const pid = url.match(/\/api\/providers\/([^/]+)$/)[1];
+          if (method === 'DELETE') {
+            const providers = Store.providers().filter(p => p.id !== pid);
+            Store.setProviders(providers);
+            return { ok: true };
+          }
+          return { ok: false };
+        }
+
+        // ── Threads ──
+        if (url === '/api/threads') {
+          if (method === 'POST') {
+            const body = init && init.body ? JSON.parse(init.body) : {};
+            const threads = Store.threads();
+            const thread = {
+              id: 'thread-' + Date.now(),
+              title: body.title || 'New Conversation',
+              providerId: body.providerId || null,
+              providerName: null,
+              selected_provider_id: body.selectedProviderId || '',
+              selected_provider_name: '',
+              selected_model_id: body.selectedModelId || '',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            };
+            threads.unshift(thread);
+            Store.setThreads(threads);
+            return { ok: true, json: () => Promise.resolve(thread) };
+          }
+          return { ok: true, json: () => Promise.resolve(Store.threads()) };
