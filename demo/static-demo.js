@@ -30,7 +30,9 @@ window.fetch = async (input, init) => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    _providers().push(p);
+    const providers = _providers();
+    providers.push(p);
+    _providers(providers);
     console.log('[VoiceChat] Providers in localStorage:', JSON.stringify(_providers()));
     return new Response(JSON.stringify(p), {
       status: 200,
@@ -98,7 +100,9 @@ window.fetch = async (input, init) => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-    _threads().unshift(t);
+    const threads = _threads();
+    threads.unshift(t);
+    _threads(threads);
     console.log('[VoiceChat] Threads after unshift:', JSON.stringify(_threads()));
     console.log('[VoiceChat] localStorage vc_threads:', localStorage.getItem('vc_threads'));
     return new Response(JSON.stringify(t), {
