@@ -47,14 +47,10 @@ window.fetch = async (input, init) => {
   if (url.match(/^\/api\/providers\/([^/]+)\/models$/)) {
     const id = url.match(/^\/api\/providers\/([^/]+)\/models$/)[1];
     const provider = _providers().find(p => p.id === id);
-    // Fetch real models from the provider
     if (provider) {
       try {
         let modelsUrl = provider.baseUrl + '/models';
         const isAnthropic = provider.name.toLowerCase().includes('anthropic');
-        if (isAnthropic) {
-          modelsUrl = provider.baseUrl + '/models';
-        }
         const headers = isAnthropic
           ? { 'x-api-key': provider.apiKey, 'anthropic-version': '2023-06-01' }
           : { 'Authorization': 'Bearer ' + provider.apiKey };
@@ -74,7 +70,6 @@ window.fetch = async (input, init) => {
         console.warn('Failed to fetch models:', e);
       }
     }
-    // Fallback
     return new Response(JSON.stringify([
       { id: 'gpt-4o', name: 'GPT-4o' },
       { id: 'gpt-4o-mini', name: 'GPT-4o Mini' }
@@ -109,7 +104,6 @@ window.fetch = async (input, init) => {
     const id = url.match(/^\/api\/threads\/([^/]+)$/)[1];
     if (method === 'DELETE') {
       _threads(_threads().filter(t => t.id !== id));
-      // Also delete messages for this thread
       const allMsgs = _messages();
       for (const key in allMsgs) {
         if (key.startsWith(id + '_')) {
@@ -177,193 +171,7 @@ window.fetch = async (input, init) => {
     }
   }
 
-  // ── TTS (skip — not critical for demo) ──
-  if (url.match(/^\/api\/tts/)) {
-    return new Response(JSON.stringify({}), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-
-  // ── Health ──
-  if (url === '/api/health') {
-    return new Response(JSON.stringify({ status: 'ok', mode: 'static' }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-
-  // Fall through to real fetch
-  return _origFetch(input, init);
-};
-  const url = typeof input === 'string' ? input : input.url;
-  const method = (init && init.method) || 'GET';
-
-  // ── Providers ──
-  if (url === '/api/providers' && method === 'GET') {
-    return new Response(JSON.stringify(_providers()), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-  if (url === '/api/providers' && method === 'POST') {
-    const body = init?.body ? JSON.parse(init.body) : {};
-    console.log('[VoiceChat] Creating provider:', body);
-    const p = {
-      id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-      name: body.name || 'New Provider',
-      baseUrl: body.baseUrl || '',
-      apiKey: body.apiKey || '',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    _providers().push(p);
-    console.log('[VoiceChat] Providers in localStorage:', JSON.stringify(_providers()));
-    return new Response(JSON.stringify(p), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-  if (url.match(/^\/api\/providers\/([^/]+)$/)) {
-    const id = url.match(/^\/api\/providers\/([^/]+)$/)[1];
-    if (method === 'DELETE') {
-      _providers(_providers().filter(p => p.id !== id));
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-  }
-  if (url.match(/^\/api\/providers\/([^/]+)\/models$/)) {
-    const id = url.match(/^\/api\/providers\/([^/]+)\/models$/)[1];
-    const provider = _providers().find(p => p.id === id);
-    // Fetch real models from the provider
-    if (provider) {
-      try {
-        let modelsUrl = provider.baseUrl + '/models';
-        const isAnthropic = provider.name.toLowerCase().includes('anthropic');
-        if (isAnthropic) {
-          modelsUrl = provider.baseUrl + '/models';
-        }
-        const headers = isAnthropic
-          ? { 'x-api-key': provider.apiKey, 'anthropic-version': '2023-06-01' }
-          : { 'Authorization': 'Bearer ' + provider.apiKey };
-        const res = await _origFetch(modelsUrl, { headers });
-        if (res.ok) {
-          const data = await res.json();
-          const models = (data.data || data).map(m => ({
-            id: m.id,
-            name: m.name || m.id,
-            capabilities: m.capabilities || []
-          }));
-          return new Response(JSON.stringify(models), {
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-      } catch (e) {
-        console.warn('Failed to fetch models:', e);
-      }
-    }
-    // Fallback
-    return new Response(JSON.stringify([
-      { id: 'gpt-4o', name: 'GPT-4o' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' }
-    ]), { headers: { 'Content-Type': 'application/json' } });
-  }
-
-  // ── Threads ──
-  if (url === '/api/threads' && method === 'GET') {
-    return new Response(JSON.stringify(_threads()), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-  if (url === '/api/threads' && method === 'POST') {
-    const body = init?.body ? JSON.parse(init.body) : {};
-    const t = {
-      id: 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-      title: body.title || 'New Conversation',
-      providerId: body.providerId || null,
-      providerName: null,
-      selected_provider_id: body.selectedProviderId || body.providerId || null,
-      selected_provider_name: '',
-      selected_model_id: body.selectedModelId || null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    _threads().unshift(t);
-    return new Response(JSON.stringify(t), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-  if (url.match(/^\/api\/threads\/([^/]+)$/)) {
-    const id = url.match(/^\/api\/threads\/([^/]+)$/)[1];
-    if (method === 'DELETE') {
-      _threads(_threads().filter(t => t.id !== id));
-      // Also delete messages for this thread
-      const allMsgs = _messages();
-      for (const key in allMsgs) {
-        if (key.startsWith(id + '_')) {
-          delete allMsgs[key];
-        }
-      }
-      _messages(allMsgs);
-      return new Response(JSON.stringify({ success: true }), {
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-    if (method === 'PUT') {
-      const body = init?.body ? JSON.parse(init.body) : {};
-      const threads = _threads();
-      const idx = threads.findIndex(t => t.id === id);
-      if (idx >= 0) {
-        threads[idx] = {
-          ...threads[idx],
-          title: body.title || threads[idx].title,
-          selected_provider_id: body.selectedProviderId || threads[idx].selected_provider_id,
-          selected_model_id: body.selectedModelId || threads[idx].selected_model_id,
-          updatedAt: new Date().toISOString()
-        };
-        return new Response(JSON.stringify(threads[idx]), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-    }
-  }
-  if (url.match(/^\/api\/threads\/([^/]+)\/messages$/)) {
-    const threadId = url.match(/^\/api\/threads\/([^/]+)\/messages$/)[1];
-    const msgs = _messages()[threadId] || [];
-    return new Response(JSON.stringify(msgs), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-
-  // ── Messages ──
-  if (url.match(/^\/api\/messages$/) && method === 'POST') {
-    const body = init?.body ? JSON.parse(init.body) : {};
-    const msgs = _messages();
-    const tid = body.threadId;
-    if (!msgs[tid]) msgs[tid] = [];
-    msgs[tid].push(body);
-    _messages(msgs);
-    return new Response(JSON.stringify(body), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-  if (url.match(/^\/api\/messages\/([^/]+)$/)) {
-    const id = url.match(/^\/api\/messages\/([^/]+)$/)[1];
-    if (method === 'PUT') {
-      const body = init?.body ? JSON.parse(init.body) : {};
-      const msgs = _messages();
-      for (const tid in msgs) {
-        const idx = msgs[tid].findIndex(m => m.id === id);
-        if (idx >= 0) {
-          msgs[tid][idx] = { ...msgs[tid][idx], ...body };
-          _messages(msgs);
-          return new Response(JSON.stringify(msgs[tid][idx]), {
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-      }
-    }
-  }
-
-  // ── TTS (skip — not critical for demo) ──
+  // ── TTS (skip) ──
   if (url.match(/^\/api\/tts/)) {
     return new Response(JSON.stringify({}), {
       headers: { 'Content-Type': 'application/json' }
@@ -416,10 +224,7 @@ const _messages = (() => {
   };
 })();
 
-// ─── 3. Replace socket.io with a real SSE client ────────────────────────
-// The app uses socket.io to stream tokens from the backend.
-// Here we replace it with a fetch-based SSE client that calls the provider directly.
-
+// ─── 3. Replace socket.io with real SSE client ──────────────────────────
 const _origIO = window.io;
 window.io = function(url, opts) {
   const socket = {
@@ -450,16 +255,15 @@ window.io = function(url, opts) {
     },
 
     _startStream(data) {
-      // Cancel any previous stream
       this._abort();
       this._abortController = new AbortController();
 
       const { threadId, content, role, providerId, modelId } = data;
 
-      // Look up the provider and its model
       console.log('[VoiceChat] Stream data:', data);
       console.log('[VoiceChat] All providers:', JSON.stringify(_providers()));
       console.log('[VoiceChat] Looking for providerId:', providerId);
+
       const provider = _providers().find(p => p.id === providerId);
       if (!provider) {
         this._emit('stream_error', { error: 'No provider configured' });
@@ -467,14 +271,12 @@ window.io = function(url, opts) {
         return;
       }
 
-      // Get conversation history
       const allMsgs = _messages();
       const threadMsgs = allMsgs[threadId] || [];
       const conversationHistory = threadMsgs
         .filter(m => m.role !== 'assistant' || m.id !== data.id)
         .map(m => ({ role: m.role, content: m.content }));
 
-      // Determine the provider type
       const isAnthropic = provider.name.toLowerCase().includes('anthropic');
       const isNvidia = provider.name.toLowerCase().includes('nvidia');
 
@@ -505,11 +307,9 @@ window.io = function(url, opts) {
         };
       }
 
-      // Build the full URL
       const baseUrl = provider.baseUrl.replace(/\/+$/, '');
       const fullUrl = baseUrl + endpoint;
 
-      // Make the streaming request
       fetch(fullUrl, {
         method: 'POST',
         headers: headers,
@@ -529,8 +329,6 @@ window.io = function(url, opts) {
         let thinkingContent = '';
         let buffer = '';
         let inThinking = false;
-
-        // Anthropic streaming format
         const isAnthropicStream = isAnthropic;
 
         try {
@@ -547,7 +345,6 @@ window.io = function(url, opts) {
               if (!trimmed) continue;
 
               if (isAnthropicStream) {
-                // Anthropic SSE format: {"type":"content_block_delta","delta":{"type":"text_delta","text":"..."}}
                 try {
                   const json = JSON.parse(trimmed);
                   if (json.type === 'content_block_start') {
@@ -555,7 +352,6 @@ window.io = function(url, opts) {
                   }
                   if (json.type === 'content_block_delta') {
                     if (json.delta?.type === 'input_json_delta') {
-                      // Thinking content
                       try {
                         const parsed = JSON.parse(json.delta.partial_json);
                         if (parsed.content) thinkingContent += parsed.content;
@@ -566,7 +362,6 @@ window.io = function(url, opts) {
                   }
                 } catch {}
               } else {
-                // OpenAI SSE format: data: {"choices":[{"delta":{"content":"..."}}]}
                 if (trimmed.startsWith('data: ')) {
                   const dataStr = trimmed.slice(6);
                   if (dataStr === '[DONE]') break;
@@ -589,17 +384,10 @@ window.io = function(url, opts) {
           }
         }
 
-        // Emit thinking tokens
-        if (thinkingContent) {
-          // Already emitted inline above for Anthropic
-        }
-
-        // Emit thinking event with accumulated content
         if (thinkingContent) {
           this._emit('thinking', { content: thinkingContent });
         }
 
-        // Emit complete
         this._emit('complete', { content: fullContent });
         this._emit('stream_complete', {});
       }).catch((e) => {
@@ -623,7 +411,6 @@ window.io = function(url, opts) {
     }
   };
 
-  // Fire connect immediately
   setTimeout(() => {
     socket._connected = true;
     if (socket._callbacks['connect']) {
