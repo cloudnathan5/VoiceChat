@@ -2,9 +2,198 @@
 // VoiceChat Static Demo — runs fully in the browser, no backend needed
 // ===================================================================
 
+console.log('[VoiceChat] PATCHING FETCH');
+
 // ─── 1. Patch fetch to intercept all API calls ──────────────────────────
 const _origFetch = window.fetch;
 window.fetch = async (input, init) => {
+  const url = typeof input === 'string' ? input : input.url;
+  const method = (init && init.method) || 'GET';
+  console.log('[VoiceChat] FETCH:', method, url);
+
+  // ── Providers ──
+  if (url === '/api/providers' && method === 'GET') {
+    return new Response(JSON.stringify(_providers()), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  if (url === '/api/providers' && method === 'POST') {
+    const body = init?.body ? JSON.parse(init.body) : {};
+    console.log('[VoiceChat] Creating provider:', body);
+    const p = {
+      id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      name: body.name || 'New Provider',
+      baseUrl: body.baseUrl || '',
+      apiKey: body.apiKey || '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    _providers().push(p);
+    console.log('[VoiceChat] Providers in localStorage:', JSON.stringify(_providers()));
+    return new Response(JSON.stringify(p), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  if (url.match(/^\/api\/providers\/([^/]+)$/)) {
+    const id = url.match(/^\/api\/providers\/([^/]+)$/)[1];
+    if (method === 'DELETE') {
+      _providers(_providers().filter(p => p.id !== id));
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
+  if (url.match(/^\/api\/providers\/([^/]+)\/models$/)) {
+    const id = url.match(/^\/api\/providers\/([^/]+)\/models$/)[1];
+    const provider = _providers().find(p => p.id === id);
+    // Fetch real models from the provider
+    if (provider) {
+      try {
+        let modelsUrl = provider.baseUrl + '/models';
+        const isAnthropic = provider.name.toLowerCase().includes('anthropic');
+        if (isAnthropic) {
+          modelsUrl = provider.baseUrl + '/models';
+        }
+        const headers = isAnthropic
+          ? { 'x-api-key': provider.apiKey, 'anthropic-version': '2023-06-01' }
+          : { 'Authorization': 'Bearer ' + provider.apiKey };
+        const res = await _origFetch(modelsUrl, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          const models = (data.data || data).map(m => ({
+            id: m.id,
+            name: m.name || m.id,
+            capabilities: m.capabilities || []
+          }));
+          return new Response(JSON.stringify(models), {
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to fetch models:', e);
+      }
+    }
+    // Fallback
+    return new Response(JSON.stringify([
+      { id: 'gpt-4o', name: 'GPT-4o' },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini' }
+    ]), { headers: { 'Content-Type': 'application/json' } });
+  }
+
+  // ── Threads ──
+  if (url === '/api/threads' && method === 'GET') {
+    return new Response(JSON.stringify(_threads()), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  if (url === '/api/threads' && method === 'POST') {
+    const body = init?.body ? JSON.parse(init.body) : {};
+    const t = {
+      id: 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      title: body.title || 'New Conversation',
+      providerId: body.providerId || null,
+      providerName: null,
+      selected_provider_id: body.selectedProviderId || body.providerId || null,
+      selected_provider_name: '',
+      selected_model_id: body.selectedModelId || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    _threads().unshift(t);
+    return new Response(JSON.stringify(t), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  if (url.match(/^\/api\/threads\/([^/]+)$/)) {
+    const id = url.match(/^\/api\/threads\/([^/]+)$/)[1];
+    if (method === 'DELETE') {
+      _threads(_threads().filter(t => t.id !== id));
+      // Also delete messages for this thread
+      const allMsgs = _messages();
+      for (const key in allMsgs) {
+        if (key.startsWith(id + '_')) {
+          delete allMsgs[key];
+        }
+      }
+      _messages(allMsgs);
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    if (method === 'PUT') {
+      const body = init?.body ? JSON.parse(init.body) : {};
+      const threads = _threads();
+      const idx = threads.findIndex(t => t.id === id);
+      if (idx >= 0) {
+        threads[idx] = {
+          ...threads[idx],
+          title: body.title || threads[idx].title,
+          selected_provider_id: body.selectedProviderId || threads[idx].selected_provider_id,
+          selected_model_id: body.selectedModelId || threads[idx].selected_model_id,
+          updatedAt: new Date().toISOString()
+        };
+        return new Response(JSON.stringify(threads[idx]), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    }
+  }
+  if (url.match(/^\/api\/threads\/([^/]+)\/messages$/)) {
+    const threadId = url.match(/^\/api\/threads\/([^/]+)\/messages$/)[1];
+    const msgs = _messages()[threadId] || [];
+    return new Response(JSON.stringify(msgs), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // ── Messages ──
+  if (url.match(/^\/api\/messages$/) && method === 'POST') {
+    const body = init?.body ? JSON.parse(init.body) : {};
+    const msgs = _messages();
+    const tid = body.threadId;
+    if (!msgs[tid]) msgs[tid] = [];
+    msgs[tid].push(body);
+    _messages(msgs);
+    return new Response(JSON.stringify(body), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+  if (url.match(/^\/api\/messages\/([^/]+)$/)) {
+    const id = url.match(/^\/api\/messages\/([^/]+)$/)[1];
+    if (method === 'PUT') {
+      const body = init?.body ? JSON.parse(init.body) : {};
+      const msgs = _messages();
+      for (const tid in msgs) {
+        const idx = msgs[tid].findIndex(m => m.id === id);
+        if (idx >= 0) {
+          msgs[tid][idx] = { ...msgs[tid][idx], ...body };
+          _messages(msgs);
+          return new Response(JSON.stringify(msgs[tid][idx]), {
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      }
+    }
+  }
+
+  // ── TTS (skip — not critical for demo) ──
+  if (url.match(/^\/api\/tts/)) {
+    return new Response(JSON.stringify({}), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // ── Health ──
+  if (url === '/api/health') {
+    return new Response(JSON.stringify({ status: 'ok', mode: 'static' }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // Fall through to real fetch
+  return _origFetch(input, init);
+};
   const url = typeof input === 'string' ? input : input.url;
   const method = (init && init.method) || 'GET';
 
