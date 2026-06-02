@@ -9,7 +9,9 @@ const _origFetch = window.fetch;
 window.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
   const method = (init && init.method) || 'GET';
-  console.log('[VoiceChat] FETCH:', method, url);
+  console.log('[VoiceChat] FETCH:', method, url, 'body:', init?.body?.substring(0, 100));
+  console.log('[VoiceChat] window.fetch patched:', typeof window.fetch === 'function');
+  console.log('[VoiceChat] fetch === window.fetch:', fetch === window.fetch);
 
   // ── Providers ──
   if (url === '/api/providers' && method === 'GET') {
