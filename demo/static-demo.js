@@ -209,10 +209,13 @@ const _providers = (() => {
 const _threads = (() => {
   let cache = null;
   return (list) => {
-    if (list !== undefined) { cache = list; localStorage.setItem('vc_threads', JSON.stringify(list)); }
+    if (list !== undefined) { 
+      cache = list; 
+      console.log('[VoiceChat] Setting vc_threads:', JSON.stringify(list));
+      try { localStorage.setItem('vc_threads', JSON.stringify(list)); } catch(e) { console.error('[VoiceChat] localStorage.setItem failed:', e); }
+    }
     if (cache === null) {
-      try { cache = JSON.parse(localStorage.getItem('vc_threads')) || []; }
-      catch { cache = []; }
+      try { cache = JSON.parse(localStorage.getItem('vc_threads')) || []; } catch { cache = []; }
     }
     return cache;
   };
