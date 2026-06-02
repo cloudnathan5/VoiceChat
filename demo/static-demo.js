@@ -86,6 +86,7 @@ window.fetch = async (input, init) => {
   }
   if (url === '/api/threads' && method === 'POST') {
     const body = init?.body ? JSON.parse(init.body) : {};
+    console.log('[VoiceChat] POST /api/threads body:', JSON.stringify(body));
     const t = {
       id: 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       title: body.title || 'New Conversation',
@@ -98,6 +99,8 @@ window.fetch = async (input, init) => {
       updatedAt: new Date().toISOString()
     };
     _threads().unshift(t);
+    console.log('[VoiceChat] Threads after unshift:', JSON.stringify(_threads()));
+    console.log('[VoiceChat] localStorage vc_threads:', localStorage.getItem('vc_threads'));
     return new Response(JSON.stringify(t), {
       headers: { 'Content-Type': 'application/json' }
     });
