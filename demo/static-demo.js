@@ -16,6 +16,7 @@ window.fetch = async (input, init) => {
   }
   if (url === '/api/providers' && method === 'POST') {
     const body = init?.body ? JSON.parse(init.body) : {};
+    console.log('[VoiceChat] Creating provider:', body);
     const p = {
       id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       name: body.name || 'New Provider',
@@ -25,6 +26,7 @@ window.fetch = async (input, init) => {
       updatedAt: new Date().toISOString()
     };
     _providers().push(p);
+    console.log('[VoiceChat] Providers in localStorage:', JSON.stringify(_providers()));
     return new Response(JSON.stringify(p), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -266,6 +268,9 @@ window.io = function(url, opts) {
       const { threadId, content, role, providerId, modelId } = data;
 
       // Look up the provider and its model
+      console.log('[VoiceChat] Stream data:', data);
+      console.log('[VoiceChat] All providers:', JSON.stringify(_providers()));
+      console.log('[VoiceChat] Looking for providerId:', providerId);
       const provider = _providers().find(p => p.id === providerId);
       if (!provider) {
         this._emit('stream_error', { error: 'No provider configured' });
