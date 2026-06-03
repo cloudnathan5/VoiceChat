@@ -9,9 +9,7 @@ const _origFetch = window.fetch;
 window.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input.url;
   const method = (init && init.method) || 'GET';
-  console.log('[VoiceChat] FETCH:', method, url, 'body:', init?.body?.substring(0, 100));
-  console.log('[VoiceChat] window.fetch patched:', typeof window.fetch === 'function');
-  console.log('[VoiceChat] fetch === window.fetch:', fetch === window.fetch);
+  console.log('[VoiceChat] FETCH:', method, url);
 
   // ── Providers ──
   if (url === '/api/providers' && method === 'GET') {
@@ -21,7 +19,6 @@ window.fetch = async (input, init) => {
   }
   if (url === '/api/providers' && method === 'POST') {
     const body = init?.body ? JSON.parse(init.body) : {};
-    console.log('[VoiceChat] Creating provider:', body);
     const p = {
       id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       name: body.name || 'New Provider',
@@ -33,7 +30,6 @@ window.fetch = async (input, init) => {
     const providers = _providers();
     providers.push(p);
     _providers(providers);
-    console.log('[VoiceChat] Providers in localStorage:', JSON.stringify(_providers()));
     return new Response(JSON.stringify(p), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -88,7 +84,6 @@ window.fetch = async (input, init) => {
   }
   if (url === '/api/threads' && method === 'POST') {
     const body = init?.body ? JSON.parse(init.body) : {};
-    console.log('[VoiceChat] POST /api/threads body:', JSON.stringify(body));
     const t = {
       id: 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       title: body.title || 'New Conversation',
@@ -103,8 +98,6 @@ window.fetch = async (input, init) => {
     const threads = _threads();
     threads.unshift(t);
     _threads(threads);
-    console.log('[VoiceChat] Threads after unshift:', JSON.stringify(_threads()));
-    console.log('[VoiceChat] localStorage vc_threads:', localStorage.getItem('vc_threads'));
     return new Response(JSON.stringify(t), {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -136,6 +129,7 @@ window.fetch = async (input, init) => {
           selected_model_id: body.selectedModelId || threads[idx].selected_model_id,
           updatedAt: new Date().toISOString()
         };
+        _threads(threads);
         return new Response(JSON.stringify(threads[idx]), {
           headers: { 'Content-Type': 'application/json' }
         });
@@ -202,7 +196,10 @@ window.fetch = async (input, init) => {
 const _providers = (() => {
   let cache = null;
   return (list) => {
-    if (list !== undefined) { cache = list; localStorage.setItem('vc_providers', JSON.stringify(list)); }
+    if (list !== undefined) {
+      cache = list;
+      try { localStorage.setItem('vc_providers', JSON.stringify(list)); } catch(e) { console.error('[VoiceChat] localStorage.setItem failed:', e); }
+    }
     if (cache === null) {
       try { cache = JSON.parse(localStorage.getItem('vc_providers')) || []; }
       catch { cache = []; }
@@ -215,8 +212,7 @@ const _threads = (() => {
   return (list) => {
     if (list !== undefined) { 
       cache = list; 
-      console.log('[VoiceChat] Setting vc_threads:', JSON.stringify(list));
-      try { localStorage.setItem('vc_threads', JSON.stringify(list)); } catch(e) { console.error('[VoiceChat] localStorage.setItem failed:', e); }
+        try { localStorage.setItem('vc_threads', JSON.stringify(list)); } catch(e) { console.error('[VoiceChat] localStorage.setItem failed:', e); }
     }
     if (cache === null) {
       try { cache = JSON.parse(localStorage.getItem('vc_threads')) || []; } catch { cache = []; }
@@ -271,16 +267,6 @@ window.io = function(url, opts) {
       this._abortController = new AbortController();
 
       const { threadId, content, role, providerId, modelId } = data;
-
-      console.log('[VoiceChat] Stream data:', data);
-      console.log('[VoiceChat] All providers:', JSON.stringify(_providers()));
-      console.log('[VoiceChat] Looking for providerId:', providerId);
-      console.log('[VoiceChat] Thread messages:', JSON.stringify(_messages()[threadId]));
-      console.log('[VoiceChat] Thread selected_provider_id:', data);
-      // Also check localStorage for thread state
-      const allThreads = JSON.parse(localStorage.getItem('vc_threads') || '[]');
-      const thread = allThreads.find(t => t.id === threadId);
-      console.log('[VoiceChat] Thread from localStorage:', thread ? JSON.stringify(thread) : 'not found');
 
       const provider = _providers().find(p => p.id === providerId);
       if (!provider) {
