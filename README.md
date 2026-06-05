@@ -2,7 +2,7 @@
 
 Aesthetic AI chat interface with real-time bidirectional voice capabilities. Supports configurable providers including custom OpenAI-compatible endpoints.
 
-# Demo
+## Demo
 
 Try the static webpage demo at https://cloudnathan5.github.io/VoiceChat/
 
