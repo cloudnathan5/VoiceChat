@@ -2,14 +2,18 @@
 
 Aesthetic AI chat interface with real-time bidirectional voice capabilities. Supports configurable providers including custom OpenAI-compatible endpoints.
 
+# Demo
+
+Try the static webpage demo at https://cloudnathan5.github.io/VoiceChat/
+
 ## Features
 
-- 🎨 **Aesthetic Interface**: Dark theme with orange/cyan accents
-- 🗣️ **Voice Chat**: Real-time bidirectional voice communication
-- 🔧 **Configurable Providers**: Support for OpenAI, Anthropic, Google, and custom endpoints
-- 📚 **Persistent Threads**: SQLite-backed conversation history
-- ⚡ **Low Latency**: WebRTC and Web Audio API for responsive voice
-- 📱 **Responsive Design**: Works on desktop, tablet, and mobile
+- **Aesthetic Interface**: Dark theme with orange/cyan accents
+- **Voice Chat**: Real-time bidirectional voice communication
+- **Configurable Providers**: Support for OpenAI, Anthropic, Google, and custom endpoints
+- **Persistent Threads**: SQLite-backed conversation history
+- **Low Latency**: WebRTC and Web Audio API for responsive voice
+- **Responsive Design**: Works on desktop, tablet, and mobile
 
 ## Architecture
 
