@@ -412,13 +412,9 @@ export function useTTS() {
     return true
   }, [ttsMuted, splitIntoSentences, stop])
 
-  // Speak a streaming chunk — stops any pending speech first to prevent queue buildup
+  // Speak a streaming chunk — queue without cancelling previous speech
   const speakStreamingChunk = useCallback((text) => {
     if (!synthRef.current || !text || text.trim().length === 0) return
-
-    // Stop any pending speech to prevent the queue from filling up
-    // This is the key fix: without cancel(), chunks queue up and repeat
-    synthRef.current.cancel()
 
     const sentences = splitIntoSentences(sanitizeText(text))
     if (sentences.length === 0) return
