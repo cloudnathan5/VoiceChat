@@ -245,6 +245,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } else {
       updatedStreamingMessages = [...state.streamingMessages, message]
     }
+    // Also persist to localStorage
+    try {
+      const allMsgs = JSON.parse(localStorage.getItem('vc_messages') || '{}')
+      const tid = message.threadId
+      if (allMsgs[tid]) {
+        const idx = allMsgs[tid].findIndex(m => m.id === id)
+        if (idx >= 0) {
+          allMsgs[tid][idx] = message
+          localStorage.setItem('vc_messages', JSON.stringify(allMsgs))
+        }
+      }
+    } catch (e) {}
     return { messages: updatedMessages, streamingMessages: updatedStreamingMessages }
   }),
 
