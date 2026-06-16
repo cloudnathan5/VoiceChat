@@ -15,6 +15,7 @@ interface ChatState {
   isLoading: boolean
   isStreaming: boolean
   darkMode: boolean
+  showSettings: boolean
   ttsEnabled: boolean
   ttsMuted: boolean
   preferredVoice: string | null
@@ -55,6 +56,9 @@ interface ChatState {
   setDarkMode: (darkMode: boolean) => void
   toggleDarkMode: () => void
   
+  getShowSettings(): boolean
+  setShowSettings: (show: boolean) => void
+  
   // Voice actions
   setVoiceState: (state: Partial<VoiceState>) => void
   updateVoiceState: (updates: Partial<VoiceState>) => void
@@ -90,6 +94,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isLoading: false,
   isStreaming: false,
   darkMode: localStorage.getItem('darkMode') === 'true',
+  showSettings: false,
   ttsEnabled: JSON.parse(localStorage.getItem('tts_enabled_v2') || 'false'),
   ttsMuted: JSON.parse(localStorage.getItem('tts_muted_v2') || 'false'),
   preferredVoice: localStorage.getItem('tts_preferred_voice_v2') || null,
@@ -244,5 +249,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const newDarkMode = !state.darkMode
     localStorage.setItem('darkMode', String(newDarkMode))
     return { darkMode: newDarkMode }
-  })
+  }),
+  
+  // Settings panel
+  getShowSettings: () => get().showSettings,
+  setShowSettings: (show) => set({ showSettings: show }),
 }))

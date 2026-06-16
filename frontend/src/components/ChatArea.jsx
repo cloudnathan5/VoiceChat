@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Send, Mic, ChevronDown, RefreshCw, Volume2, VolumeX, Settings, StopCircle, Radio, Hand } from 'lucide-react'
+import { Send, Mic, ChevronDown, RefreshCw, Volume2, VolumeX, Settings, StopCircle, Radio, Hand, ArrowLeft } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import { useVoiceChat } from '../hooks/useVoiceChat'
 import { useTTS } from '../hooks/useTTS'
@@ -58,6 +58,8 @@ function ChatArea() {
     setProviderModels,
     setLastUsedSelections,
     darkMode,
+    showSettings,
+    setShowSettings,
     voiceState,
     updateVoiceState
   } = useChatStore()
@@ -586,14 +588,23 @@ function ChatArea() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-              {activeThread.title}
+              {showSettings ? 'Settings' : activeThread.title}
             </h2>
-            {activeThread.providerName && (
+            {!showSettings && activeThread.providerName && (
               <p className={darkMode ? 'text-gray-400 text-sm' : 'text-gray-600 text-sm'}>
                 {activeThread.providerName}
               </p>
             )}
           </div>
+          {showSettings && (
+            <button
+              onClick={() => setShowSettings(false)}
+              className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}
+              title="Close settings"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          )}
 
           {/* Voice Chat Status Indicator */}
           {isVoiceActiveState && (

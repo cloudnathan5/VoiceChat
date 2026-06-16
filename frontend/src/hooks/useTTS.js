@@ -22,6 +22,7 @@ export function useTTS() {
   const currentStreamContentRef = useRef('')
   const spokenChunksRef = useRef(new Set())  // track ALL chunks that have been spoken
   const lastStableContentRef = useRef('')    // content that was stable before the last token
+  const lastSpeakingChunkRef = useRef(null)  // track last chunk spoken for debounce
 
   const {
     ttsEnabled,
@@ -178,6 +179,19 @@ export function useTTS() {
     }
   }, [voiceProvider, setPreferredVoiceDb, saveTtsSettings])
 
+  // Common abbreviations to protect from sentence splitting
+  const ABBREVIATIONS = new Set([
+    'e.g.', 'i.e.', 'etc.', 'vs.', 'dr.', 'mr.', 'ms.', 'mrs.', 'prof.',
+    'st.', 'ave.', 'blvd.', 'apt.', 'p.m.', 'a.m.', 'p.m', 'a.m',
+    'inc.', 'ltd.', 'corp.', 'co.', 'dept.', 'fig.', 'eq.', 'approx.',
+    'vol.', 'nos.', 'jan.', 'feb.', 'mar.', 'apr.', 'jun.', 'jul.',
+    'aug.', 'sep.', 'oct.', 'nov.', 'dec.', 'mon.', 'tue.', 'wed.',
+    'thu.', 'fri.', 'sat.', 'sun.', 'etc', 'etc', 'fig', 'eq', 'approx',
+    'vol', 'nos', 'dept', 'inc', 'ltd', 'corp', 'co', 'p.m.', 'a.m.',
+    'p.m', 'a.m', 'mr', 'mrs', 'ms', 'dr', 'sr', 'jr', 'st', 'ave',
+    'blvd', 'apt', 'prof', 'gov', 'rep', 'sen'
+  ])
+
   // Helper to strip markdown symbols and emojis
   const sanitizeText = (t) => {
     // Remove common markdown characters (*, _, `, ~)
@@ -209,6 +223,29 @@ export function useTTS() {
     setIsSpeaking(false)
   }, [])
 
+  // Merge abbreviations with the next chunk (e.g. 'e.' + 'g.' -> 'e.g.')
+  const mergeAbbreviations = useCallback((chunks) => {
+    if (chunks.length === 0) return chunks
+
+    const merged = [chunks[0]]
+    for (let i = 1; i < chunks.length; i++) {
+      const prev = merged[merged.length - 1]
+      const curr = chunks[i]
+
+      // Check if previous chunk ends with an abbreviation (single letter + dots)
+      // and current chunk starts with a single letter + dots — merge them
+      const prevEndsWithAbbr = /\b[\w]\.$/.test(prev)
+      const currStartsWithAbbr = /^\.\s*[\w]\./i.test(curr)
+
+      if (prevEndsWithAbbr && currStartsWithAbbr) {
+        merged[merged.length - 1] = prev + curr
+      } else {
+        merged.push(curr)
+      }
+    }
+    return merged
+  }, [])
+
   // Split text into sentences for natural streaming
   const splitIntoSentences = useCallback((text) => {
     const sentenceRegex = /[.!?]+(\s|$)+/g
@@ -229,8 +266,9 @@ export function useTTS() {
       sentences.push(remaining)
     }
 
-    return sentences.filter(s => s.length > 0)
-  }, [])
+    // Merge abbreviation fragments (e.g. 'e.' + 'g.' -> 'e.g.')
+    return mergeAbbreviations(sentences.filter(s => s.length > 0))
+  }, [mergeAbbreviations])
 
   // Split text into natural speaking chunks (clauses, sentences, etc.)
   const splitIntoChunks = useCallback((text) => {
@@ -253,8 +291,9 @@ export function useTTS() {
       chunks.push(remaining)
     }
 
-    return chunks.filter(c => c.length > 0)
-  }, [])
+    // Merge abbreviation fragments (e.g. 'e.' + 'g.' -> 'e.g.')
+    return mergeAbbreviations(chunks.filter(c => c.length > 0))
+  }, [mergeAbbreviations])
 
   // Check if text is "complete enough" to speak (has a sentence boundary or is long enough)
   const isSpeakableChunk = useCallback((text) => {
@@ -287,8 +326,13 @@ export function useTTS() {
       // Only speak if the last chunk ends with sentence-ending punctuation
       // This ensures the sentence is truly complete
       if (/[.!?]+$/.test(lastChunk.trim())) {
-        speakStreamingChunk(lastChunk)
-        spokenChunksRef.current.add(lastChunk)
+        // Don't speak if we're already speaking this chunk — prevents rapid re-queuing
+        // Use a small debounce: skip if the same chunk was spoken within the last 200ms
+        if (!lastSpeakingChunkRef.current || lastSpeakingChunkRef.current.text !== lastChunk || Date.now() - lastSpeakingChunkRef.current.time > 200) {
+          speakStreamingChunk(lastChunk)
+          spokenChunksRef.current.add(lastChunk)
+          lastSpeakingChunkRef.current = { text: lastChunk, time: Date.now() }
+        }
       }
     }
   }, [splitIntoChunks])
@@ -368,9 +412,13 @@ export function useTTS() {
     return true
   }, [ttsMuted, splitIntoSentences, stop])
 
-  // Speak a streaming chunk without stopping current speech
+  // Speak a streaming chunk — stops any pending speech first to prevent queue buildup
   const speakStreamingChunk = useCallback((text) => {
     if (!synthRef.current || !text || text.trim().length === 0) return
+
+    // Stop any pending speech to prevent the queue from filling up
+    // This is the key fix: without cancel(), chunks queue up and repeat
+    synthRef.current.cancel()
 
     const sentences = splitIntoSentences(sanitizeText(text))
     if (sentences.length === 0) return

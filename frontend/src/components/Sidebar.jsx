@@ -3,28 +3,11 @@ import { Plus, Trash2, Settings, MessageSquare, X, TestTube, Moon, Sun } from 'l
 import { useChatStore } from '../stores/chatStore'
 
 function Sidebar() {
-const { threads, activeThread, setActiveThread, addThread, removeThread, providers, addProvider, removeProvider, setProviderModels, lastUsedProviderId, lastUsedModelId, darkMode, toggleDarkMode } = useChatStore()
-const [isOpen, setIsOpen] = useState(false)
+const { threads, activeThread, setActiveThread, addThread, removeThread, providers, addProvider, removeProvider, setProviderModels, lastUsedProviderId, lastUsedModelId, darkMode, toggleDarkMode, showSettings, setShowSettings } = useChatStore()
 const [isAdding, setIsAdding] = useState(false)
 const [isTesting, setIsTesting] = useState(false)
 const [formData, setFormData] = useState({ name: '', baseUrl: '', apiKey: '' })
 const [isCollapsed, setIsCollapsed] = useState(false)
-
-const refreshModels = async () => {
-for (const provider of providers) {
-try {
-const response = await fetch(`/api/providers/${provider.id}/models`)
-if (response.ok) {
-const models = await response.json()
-setProviderModels(provider.id, models)
-}
-} catch (error) {
-setProviderModels(provider.id, [])
-}
-}
-}
-
-useEffect(() => { if (isOpen) refreshModels() }, [isOpen])
 
 const handleNewThread = async (e) => {
 e?.preventDefault()
@@ -116,7 +99,7 @@ return (
 <button onClick={toggleDarkMode} className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-yellow-400 hover:text-yellow-300 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'}`} title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
 {darkMode ? <Sun size={20} /> : <Moon size={20} />}
 </button>
-<button onClick={() => setIsOpen(true)} className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
+<button onClick={() => setShowSettings(!showSettings)} className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
 <Settings size={20} />
 </button>
 </>
@@ -175,74 +158,6 @@ title={thread.title}
 </div>
 </div>
 
-{isOpen && (
-<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-<div className={`border rounded-lg w-full max-w-2xl max-h-[80vh] overflow-hidden shadow-xl ${darkMode ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}>
-<div className={`p-6 border-b flex items-center justify-between ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-<h2 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Provider Settings</h2>
-<button onClick={() => setIsOpen(false)} className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
-<X size={20} />
-</button>
-</div>
-<div className={`p-6 overflow-y-auto max-h-[60vh] ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-<div className="mb-6">
-<button onClick={() => setIsAdding(true)} className={`w-full border rounded-lg p-4 flex items-center justify-center gap-2 transition-colors ${darkMode ? 'bg-gray-800 hover:bg-gray-700 border-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-700'}`}>
-<Plus size={16} /> Add Provider
-</button>
-</div>
-{isAdding && (
-<form onSubmit={handleSubmit} className={`mb-6 p-6 rounded-lg border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
-<h3 className={`font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Add New Provider</h3>
-<div className="space-y-4">
-<div>
-<label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Name</label>
-<input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g., OpenAI" className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 ${darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900'}`} required />
-</div>
-<div>
-<label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Base URL</label>
-<input type="url" value={formData.baseUrl} onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })} placeholder="https://api.openai.com/v1" className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 ${darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900'}`} required />
-</div>
-<div>
-<label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>API Key</label>
-<input type="password" value={formData.apiKey} onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })} placeholder="sk-..." className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 ${darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900'}`} required />
-</div>
-</div>
-<div className="flex gap-3 mt-6">
-<button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors font-medium">Save</button>
-<button type="button" onClick={() => setIsAdding(false)} className={`flex-1 py-2 px-4 rounded-lg transition-colors font-medium ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'}`}>Cancel</button>
-</div>
-</form>
-)}
-{providers.length === 0 ? (
-<div className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}><p className="text-sm">No providers configured</p></div>
-) : (
-<>
-<div className="space-y-3">
-{providers.map((provider) => (
-<div key={provider.id} className={`border rounded-lg p-4 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-<div className="flex items-center justify-between">
-<div>
-<div className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{provider.name}</div>
-<div className={`text-sm truncate ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{provider.base_url}</div>
-</div>
-<div className="flex items-center gap-2">
-<button onClick={() => handleTestConnection(provider.id)} disabled={isTesting} className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`} title="Test Connection">
-<TestTube size={16} className={isTesting ? 'animate-pulse' : ''} />
-</button>
-<button onClick={() => handleDeleteProvider(provider.id)} className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-red-400 hover:text-red-300 hover:bg-red-900/30' : 'text-red-500 hover:text-red-700 hover:bg-red-100'}`} title="Delete Provider">
-<X size={16} />
-</button>
-</div>
-</div>
-</div>
-))}
-</div>
-</>
-)}
-</div>
-</div>
-</div>
-)}
 </>
 )
 }
