@@ -72,8 +72,18 @@ function SettingsPanel() {
   }
 
   return (
-    <div className={`flex-1 min-h-0 overflow-y-auto ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
-      <div className="max-w-3xl mx-auto py-8 px-6">
+    <div className={`flex-1 flex flex-col min-h-0 ${darkMode ? 'bg-gray-950' : 'bg-white'}`}>
+      <div className={`border-b px-6 py-4 flex-shrink-0 ${darkMode ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              Settings
+            </h2>
+          </div>
+        </div>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
+        <div className="max-w-3xl mx-auto py-8 px-6">
         <div className="mb-8">
           <h2 className={`text-2xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
             Provider Settings
@@ -214,6 +224,7 @@ function SettingsPanel() {
             ))}
           </div>
         )}
+        </div>
       </div>
     </div>
   )
