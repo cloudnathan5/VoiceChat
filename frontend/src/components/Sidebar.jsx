@@ -99,7 +99,7 @@ return (
 <button onClick={toggleDarkMode} className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-yellow-400 hover:text-yellow-300 hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'}`} title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
 {darkMode ? <Sun size={20} /> : <Moon size={20} />}
 </button>
-<button onClick={() => setShowSettings(!showSettings)} className={`p-2 rounded-lg transition-colors ${darkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}>
+<button onClick={() => setShowSettings(!showSettings)} className={`p-2 rounded-lg transition-colors ${showSettings ? (darkMode ? 'bg-cyan-600 text-white' : 'bg-cyan-500 text-white') : (darkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100')}`}>
 <Settings size={20} />
 </button>
 </>
@@ -121,7 +121,7 @@ threads.length === 0 ? (
 </div>
 ) : (
 threads.map((thread) => (
-<div key={thread.id} onClick={() => setActiveThread(thread)} className={`p-4 border-b cursor-pointer transition-colors ${darkMode ? 'border-gray-800' : 'border-gray-200'} ${activeThread?.id === thread.id ? (darkMode ? 'bg-gray-800 border-l-4 border-blue-500' : 'bg-blue-50 border-l-4 border-blue-500') : (darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100')}`}>
+<div key={thread.id} onClick={() => { setActiveThread(thread); setShowSettings(false) }} className={`p-4 border-b cursor-pointer transition-colors ${darkMode ? 'border-gray-800' : 'border-gray-200'} ${activeThread?.id === thread.id ? (darkMode ? 'bg-gray-800 border-l-4 border-blue-500' : 'bg-blue-50 border-l-4 border-blue-500') : (darkMode ? 'hover:bg-gray-800' : 'hover:bg-gray-100')}`}>
 <div className="flex items-center justify-between">
 <div className="flex-1 min-w-0">
 <div className={`font-medium truncate text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>{thread.title}</div>
