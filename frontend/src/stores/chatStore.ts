@@ -192,15 +192,47 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // Message actions
   getMessages: () => get().messages,
   setMessages: (messages) => set({ messages }),
-  addMessage: (message) => set((state) => ({ 
-    messages: [...state.messages, message] 
-  })),
-  updateMessage: (id, updates) => set((state) => ({ 
-    messages: state.messages.map(m => m.id === id ? { ...m, ...updates } : m)
-  })),
-  updateMessageContent: (id, content) => set((state) => ({ 
-    messages: state.messages.map(m => m.id === id ? { ...m, content } : m)
-  })),
+  addMessage: (message) => set((state) => {
+    const newMessages = [...state.messages, message]
+    try {
+      const allMsgs = JSON.parse(localStorage.getItem('vc_messages') || '{}')
+      const threadMsgs = allMsgs[message.threadId] || []
+      threadMsgs.push(message)
+      allMsgs[message.threadId] = threadMsgs
+      localStorage.setItem('vc_messages', JSON.stringify(allMsgs))
+    } catch (e) {}
+    return { messages: newMessages }
+  }),
+  updateMessage: (id, updates) => set((state) => {
+    const newMessages = state.messages.map(m => m.id === id ? { ...m, ...updates } : m)
+    try {
+      const allMsgs = JSON.parse(localStorage.getItem('vc_messages') || '{}')
+      for (const tid in allMsgs) {
+        const idx = allMsgs[tid].findIndex(m => m.id === id)
+        if (idx >= 0) {
+          allMsgs[tid][idx] = { ...allMsgs[tid][idx], ...updates }
+          localStorage.setItem('vc_messages', JSON.stringify(allMsgs))
+          break
+        }
+      }
+    } catch (e) {}
+    return { messages: newMessages }
+  }),
+  updateMessageContent: (id, content) => set((state) => {
+    const newMessages = state.messages.map(m => m.id === id ? { ...m, content } : m)
+    try {
+      const allMsgs = JSON.parse(localStorage.getItem('vc_messages') || '{}')
+      for (const tid in allMsgs) {
+        const idx = allMsgs[tid].findIndex(m => m.id === id)
+        if (idx >= 0) {
+          allMsgs[tid][idx] = { ...allMsgs[tid][idx], content }
+          localStorage.setItem('vc_messages', JSON.stringify(allMsgs))
+          break
+        }
+      }
+    } catch (e) {}
+    return { messages: newMessages }
+  }),
   replaceStreamingMessage: (id, message) => set((state) => {
     // Update in both messages and streamingMessages
     const updatedMessages = state.messages.map(m => m.id === id ? message : m)
