@@ -169,7 +169,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const filteredNonStreaming = nonStreamingMessages.filter(m => m.id !== threadStreamingMessage.id)
             set({ messages: [...filteredNonStreaming, threadStreamingMessage] })
           } else {
-            set({ messages })
+            // Filter out any leftover streaming messages (isStreaming: true with empty content)
+            const nonStreamingMessages = messages.filter(m => !m.isStreaming)
+            set({ messages: nonStreamingMessages })
           }
         })
     } else {
