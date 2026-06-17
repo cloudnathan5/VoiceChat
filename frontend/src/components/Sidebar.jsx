@@ -24,6 +24,7 @@ if (response.ok) {
 const thread = await response.json()
 addThread(thread)
 setActiveThread(thread)
+setShowSettings(false)
 }
 } catch (error) { console.error('Failed to create thread:', error) }
 }
