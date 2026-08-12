@@ -61,10 +61,35 @@ the page, including browser extensions. Use a key with a spending cap rather
 than your main one, and avoid shared machines.
 
 **The endpoint must allow browser requests.** Because the call goes straight
-from the page, the provider has to return permissive CORS headers. Many do;
-some do not. If a request fails with a message about not reaching the host,
-that is what happened — try a provider that permits browser access, or run a
-local model behind a CORS-enabled proxy.
+from the page, the provider has to return permissive CORS headers. If a request
+fails with a message about not reaching the host, that is what happened.
+
+Checked 2026-08-12 against a GitHub Pages origin — these permit browser calls:
+
+| Provider | Base URL |
+| --- | --- |
+| OpenAI | `https://api.openai.com/v1` |
+| Anthropic | `https://api.anthropic.com` |
+| OpenRouter | `https://openrouter.ai/api/v1` |
+| Groq | `https://api.groq.com/openai/v1` |
+| Together | `https://api.together.xyz/v1` |
+| DeepSeek | `https://api.deepseek.com/v1` |
+| Mistral | `https://api.mistral.ai/v1` |
+| Google (OpenAI-compatible) | `https://generativelanguage.googleapis.com/v1beta/openai` |
+| Cerebras | `https://api.cerebras.ai/v1` |
+| xAI | `https://api.x.ai/v1` |
+
+Anthropic additionally requires the `anthropic-dangerous-direct-browser-access`
+header, which `frontend/src/lib/provider.js` sends; without it the preflight is
+rejected.
+
+**NVIDIA does not work.** `https://integrate.api.nvidia.com/v1` returns
+`Access-Control-Allow-Origin` only for `*.nvidia.com` origins, so the browser
+blocks it before the request is sent. This is not fixable from the client — no
+header or code change helps. `api.nvcf.nvidia.com` does allow browser origins
+but is not OpenAI-compatible (it invokes via `/v2/nvcf/pexec/functions/{id}`),
+so it is not a substitute. Reaching NVIDIA would require a proxy, which means
+running a server again.
 
 ### Browser support
 
