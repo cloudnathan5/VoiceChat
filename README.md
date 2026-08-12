@@ -84,7 +84,7 @@ npm run test:e2e     # drive the built page in a real browser
 ```
 
 `demo/` is a build output and is not committed. The Pages workflow rebuilds it
-from source on every push to the `demo` branch, so what is published always
+from source on every push to `main`, so what is published always
 matches the code.
 
 `localhost` counts as a secure context, so the microphone works in `npm run dev`
