@@ -1,9 +1,10 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Mic, ChevronDown, RefreshCw, Volume2, VolumeX, Settings, StopCircle, Radio, Hand, ArrowLeft } from 'lucide-react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { Send, Mic, RefreshCw, Volume2, VolumeX, Settings, StopCircle, Radio, Hand, ArrowLeft } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import { useVoiceChat } from '../hooks/useVoiceChat'
 import { useTTS } from '../hooks/useTTS'
 import MessageBubble from './MessageBubble'
+import SearchableSelect from './SearchableSelect'
 
 // Waveform visualization component
 function WaveformBars({ level, isActive }) {
@@ -484,8 +485,7 @@ function ChatArea() {
   // Refresh models for selected provider
   const handleRefreshModels = () => loadModels(selectedProvider)
 
-  const handleProviderChange = async (e) => {
-    const newProviderId = e.target.value
+  const handleProviderChange = async (newProviderId) => {
     setSelectedProvider(newProviderId)
     setSelectedModel('')
     setLastUsedSelections(newProviderId, '')
@@ -513,8 +513,7 @@ function ChatArea() {
     }
   }
 
-  const handleModelChange = async (e) => {
-    const newModelId = e.target.value
+  const handleModelChange = async (newModelId) => {
     setSelectedModel(newModelId)
     setLastUsedSelections(selectedProvider, newModelId)
 
@@ -538,6 +537,30 @@ function ChatArea() {
       }
     }
   }
+
+  // Option lists for the pickers. Memoised because this component re-renders on
+  // every streamed token and a model list can run to several hundred entries.
+  const providerOptions = useMemo(
+    () =>
+      (providers || []).map((provider) => ({
+        value: provider.id,
+        label: provider.name,
+        hint: provider.baseUrl || provider.base_url || '',
+      })),
+    [providers],
+  )
+
+  // The id is worth showing under the name: OpenRouter labels a model
+  // "Google: Gemma 4 26B A4B" but wants "google/gemma-4-26b-a4b" on the wire,
+  // and searching either one should find it.
+  const modelOptions = useMemo(
+    () =>
+      (models[selectedProvider] || []).map((model) => {
+        const label = model.name || model.id
+        return { value: model.id, label, hint: model.id === label ? '' : model.id }
+      }),
+    [models, selectedProvider],
+  )
 
   if (!activeThread) {
     return (
@@ -649,39 +672,31 @@ function ChatArea() {
           {/* Provider/Model Controls Row */}
           <div className="flex items-center gap-3 mb-3">
             {/* Provider Selector */}
-            <div className="relative flex-1 max-w-[180px]">
-              <select
-                className={`w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
-                onChange={handleProviderChange}
-                value={selectedProvider}
-              >
-                <option value="">Provider</option>
-                {(providers || []).map(provider => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} className={`absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-400'}`} />
-            </div>
+            <SearchableSelect
+              className="flex-1 max-w-[180px]"
+              ariaLabel="Provider"
+              darkMode={darkMode}
+              value={selectedProvider}
+              options={providerOptions}
+              onChange={handleProviderChange}
+              placeholder="Provider"
+              searchPlaceholder="Search providers"
+              emptyMessage="No providers match"
+            />
 
             {/* Model Selector */}
-            <div className="relative flex-1 max-w-[180px]">
-              <select
-                className={`w-full border rounded-lg px-3 py-2 text-sm appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
-                onChange={handleModelChange}
-                value={selectedModel}
-                disabled={!selectedProvider}
-              >
-                <option value="">Model</option>
-                {(models[selectedProvider] || []).map(model => (
-                  <option key={model.id} value={model.id}>
-                    {model.name || model.id}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={14} className={`absolute right-2 top-1/2 transform -translate-y-1/2 pointer-events-none ${darkMode ? 'text-gray-400' : 'text-gray-400'}`} />
-            </div>
+            <SearchableSelect
+              className="flex-1 max-w-[180px]"
+              ariaLabel="Model"
+              darkMode={darkMode}
+              value={selectedModel}
+              options={modelOptions}
+              onChange={handleModelChange}
+              disabled={!selectedProvider}
+              placeholder="Model"
+              searchPlaceholder="Search models"
+              emptyMessage={selectedProvider ? 'No models match' : 'Select a provider first'}
+            />
 
             {/* Refresh Button */}
             <button
@@ -776,7 +791,7 @@ function ChatArea() {
 
               {/* TTS Settings Dropdown */}
               {showTtsMenu && (
-                <div className={`absolute right-0 mb-2 bottom-full w-80 rounded-lg shadow-xl border z-50 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                <div className={`absolute right-0 mb-2 bottom-full w-80 rounded-xl shadow-2xl border z-50 overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
                   {/* Header */}
                   <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
                     <div className="flex items-center justify-between mb-3">
@@ -836,7 +851,7 @@ function ChatArea() {
 
                   {/* Voice list */}
                   {ttsEnabled && isTtsSupported && (
-                    <div className="max-h-48 overflow-y-auto p-2">
+                    <div className="max-h-48 overflow-y-auto scrollbar-subtle p-2">
                       {isLoadingVoices ? (
                         <div className={`p-4 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                           Loading voices...

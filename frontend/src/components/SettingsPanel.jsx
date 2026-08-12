@@ -196,7 +196,7 @@ function SettingsPanel() {
                           {provider.name}
                         </div>
                         <div className={`text-sm truncate max-w-md ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                          {provider.base_url}
+                          {provider.baseUrl || provider.base_url}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

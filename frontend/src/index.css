@@ -44,4 +44,31 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;  /* Safari and Chrome */
   }
+
+  /* A scroll affordance that doesn't draw a light gutter down the side of a
+     dark panel. The track is dropped entirely and the thumb is a translucent
+     grey pill, so it reads as part of whatever it's scrolling over. */
+  .scrollbar-subtle {
+    scrollbar-width: thin;  /* Firefox */
+    scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+  }
+
+  .scrollbar-subtle::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-subtle::-webkit-scrollbar-track,
+  .scrollbar-subtle::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .scrollbar-subtle::-webkit-scrollbar-thumb {
+    background-color: rgba(148, 163, 184, 0.35);
+    border-radius: 9999px;
+  }
+
+  .scrollbar-subtle::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(148, 163, 184, 0.55);
+  }
 }
