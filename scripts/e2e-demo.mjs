@@ -39,6 +39,20 @@ const REPLY_TOKENS = [
 /** Every chat request the page made, captured for assertions. */
 const received = []
 
+/**
+ * Poll until a condition holds. The second turn used to be given a flat 2.5s
+ * and then asserted on, which failed roughly half the time on a loaded machine
+ * — a red run that said nothing about the code.
+ */
+async function waitFor(predicate, description, timeout = 15000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  throw new Error(`timed out after ${timeout}ms waiting for ${description}`)
+}
+
 function serveApi(req, res, body) {
   if (req.url.startsWith('/v1/models')) {
     res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -201,9 +215,21 @@ async function main() {
 
     // ── A second turn carries the first as history, still without duplicates ──
     await input.fill('And Germany?')
+    // The composer drops a send outright while a reply is still in flight, and
+    // the reply's last token renders a beat before `[DONE]` clears that flag.
+    // Waiting on the rendered text alone therefore typed into a composer that
+    // was still busy, and the turn vanished. Wait for the send button to go
+    // live — that is the same condition the send path checks.
+    await page.waitForFunction(
+      () => {
+        const send = [...document.querySelectorAll('button')].find((b) => b.querySelector('svg.lucide-send'))
+        return Boolean(send) && !send.disabled
+      },
+      { timeout: 15000 },
+    )
     await input.press('Enter')
-    await page.waitForFunction(() => window.__e2e_done !== true, { timeout: 100 }).catch(() => {})
-    await page.waitForTimeout(2500)
+
+    await waitFor(() => received.length === 2, 'the second turn to reach the endpoint')
 
     assert.equal(received.length, 2, 'second turn should reach the endpoint')
     const second = received[1].messages

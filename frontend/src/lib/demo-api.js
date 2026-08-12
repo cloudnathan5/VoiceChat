@@ -136,9 +136,35 @@ export function installDemoApi() {
     }
 
     const providerMatch = url.match(/^\/api\/providers\/([^/]+)$/)
-    if (providerMatch && method === 'DELETE') {
-      save(KEYS.providers, load(KEYS.providers, []).filter((p) => p.id !== providerMatch[1]))
-      return json({ success: true })
+    if (providerMatch) {
+      const id = providerMatch[1]
+
+      if (method === 'DELETE') {
+        save(KEYS.providers, load(KEYS.providers, []).filter((p) => p.id !== id))
+        return json({ success: true })
+      }
+
+      if (method === 'PUT') {
+        const providers = load(KEYS.providers, [])
+        const index = providers.findIndex((p) => p.id === id)
+        if (index === -1) return json({ error: 'Provider not found.' }, 404)
+
+        providers[index] = {
+          ...providers[index],
+          name: body.name ?? providers[index].name,
+          baseUrl: body.baseUrl ?? providers[index].baseUrl,
+          // The edit form is never handed the stored key, so an empty field
+          // means "unchanged" rather than "clear it". Without this, opening
+          // the form and saving a renamed provider would silently drop the key.
+          apiKey: body.apiKey ? body.apiKey : providers[index].apiKey,
+          updatedAt: new Date().toISOString(),
+        }
+
+        if (!save(KEYS.providers, providers)) {
+          return json({ error: 'Could not save the provider — browser storage is full or blocked.' }, 507)
+        }
+        return json(providers[index])
+      }
     }
 
     const modelsMatch = url.match(/^\/api\/providers\/([^/]+)\/models$/)

@@ -25,6 +25,7 @@ interface ChatState {
   getProviders(): Provider[]
   setProviders: (providers: Provider[]) => void
   addProvider: (provider: Provider) => void
+  updateProvider: (id: string, updates: Partial<Provider>) => void
   removeProvider: (id: string) => void
   
   getThreads(): Thread[]
@@ -118,6 +119,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   setPreferredVoiceDb: (voice: string | null) => {
     localStorage.setItem('tts_preferred_voice_v2', voice || '')
+    // Persisting without also updating state left every voice picker showing
+    // the previous choice until the page was reloaded.
+    set({ preferredVoice: voice })
   },
 
   // Voice actions
@@ -139,8 +143,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   }),
   // Provider actions
   setProviders: (providers) => set({ providers }),
-  addProvider: (provider) => set((state) => ({ 
-    providers: [...state.providers, provider] 
+  addProvider: (provider) => set((state) => ({
+    providers: [...state.providers, provider]
+  })),
+  updateProvider: (id, updates) => set((state) => ({
+    providers: state.providers.map(p => p.id === id ? { ...p, ...updates } : p)
   })),
   removeProvider: (id) => set((state) => ({ 
     providers: state.providers.filter(p => p.id !== id) 

@@ -31,6 +31,10 @@ export function useTTS() {
   const [availableVoices, setAvailableVoices] = useState([])
   const [isLoadingVoices, setIsLoadingVoices] = useState(true)
   const [isSpeaking, setIsSpeaking] = useState(false)
+  // Support has to be state, not a read of synthRef during render: the ref is
+  // still null on the first render, so a component that never re-renders for
+  // another reason would report "no speech synthesis" on a browser that has it.
+  const [isSupported, setIsSupported] = useState(false)
 
   const synthRef = useRef(null)
   const preferredVoiceRef = useRef(null)
@@ -98,6 +102,7 @@ export function useTTS() {
     }
 
     synthRef.current = synth
+    setIsSupported(true)
     loadVoices()
 
     return () => {
@@ -245,7 +250,7 @@ export function useTTS() {
     availableVoices,
     isLoadingVoices,
     isSpeaking,
-    isSupported: Boolean(synthRef.current),
+    isSupported,
     ttsEnabled,
     ttsMuted,
     preferredVoice,
