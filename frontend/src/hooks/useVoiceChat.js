@@ -65,22 +65,27 @@ export function useVoiceChat() {
       source.connect(analyser)
       analyserRef.current = analyser
 
-      // Start continuous audio level monitoring via animation frame
+      // Reused across frames — allocating a fresh array 60x a second is
+      // needless garbage.
+      const spectrum = new Uint8Array(analyser.frequencyBinCount)
+
       const monitorLevel = () => {
         if (!analyserRef.current) return
-        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
-        analyserRef.current.getByteFrequencyData(dataArray)
+        analyserRef.current.getByteFrequencyData(spectrum)
 
-        // Calculate weighted average (emphasize lower frequencies where speech lives)
+        // Weighted mean, emphasising the low end where speech energy sits.
+        // The weights have to divide back out again: dividing by the bin count
+        // instead left the reported level about twice the real amplitude, so
+        // every threshold tuned against it was silently wrong.
         let sum = 0
-        const weightSum = 0
-        for (let i = 0; i < dataArray.length; i++) {
-          const weight = 1 + (1 - i / dataArray.length) * 2 // Boost lower freqs
-          sum += dataArray[i] * weight
+        let weightSum = 0
+        for (let i = 0; i < spectrum.length; i++) {
+          const weight = 1 + (1 - i / spectrum.length) * 2
+          sum += spectrum[i] * weight
+          weightSum += weight
         }
-        const level = sum / dataArray.length
 
-        setAudioLevel(level)
+        setAudioLevel(weightSum > 0 ? sum / weightSum : 0)
         animFrameRef.current = requestAnimationFrame(monitorLevel)
       }
       monitorLevel()
@@ -150,7 +155,9 @@ export function useVoiceChat() {
 
     recognition.onerror = (event) => {
       console.error('Speech recognition error:', event.error)
-      const active = isPushingToTalkRef.current || isListening
+      // Refs, not state: this handler is created once and would otherwise
+      // close over `isListening` as it was at setup time (always false).
+      const active = isPushingToTalkRef.current || isListeningRef.current
       if (event.error === 'no-speech') {
         // Silently restart for no-speech errors
         if (active) {
@@ -243,20 +250,16 @@ export function useVoiceChat() {
       hasSpeechSinceStartRef.current = false
       hasTranscribedInCurrentMessageRef.current = false
 
-      // Monitor audio levels for VAD feedback
-      const vadInterval = setInterval(() => {
-        if (!analyserRef.current) return
-        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
-        analyserRef.current.getByteFrequencyData(dataArray)
-        const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length
-        setAudioLevel(average)
-      }, 100)
-
-      return vadInterval
+      // The requestAnimationFrame loop from setupVAD already publishes the
+      // level. There used to be a second setInterval here writing the same
+      // state from an unweighted average — the two fought each other, and
+      // nothing ever cleared the interval, so it kept running (and holding the
+      // analyser alive) long after stopListening().
+      return true
     } catch (error) {
       console.error('Failed to start continuous listening:', error)
       setIsListening(false)
-      return null
+      return false
     }
   }, [setupVAD, setupSpeechRecognition])
 

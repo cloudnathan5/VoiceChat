@@ -1,28 +1,47 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useChatStore } from '../stores/chatStore'
+import { sanitizeForSpeech, splitSpeakable } from '../lib/text.js'
 
 /**
- * Text-to-Speech hook supporting both Browser Web Speech API and Piper TTS
+ * Speech synthesis, fed a sentence at a time.
+ *
+ * The latency trick is that speech starts before the model has finished
+ * writing: `feedStreamingTTS` is handed the response so far on every token and
+ * queues each sentence the moment it is complete, so the first words are
+ * audible while the rest is still streaming.
+ *
+ * This used to also route to a Piper server over `/api/tts/*`. There is no
+ * server any more, so that path was dead — it only showed up in the UI as a
+ * "Piper — not running" button that could never do anything.
  */
+
+/** Slightly quicker than default; conversational rather than newsreader. */
+const SPEECH_RATE = 1.1
+
+/**
+ * Shortest fragment worth speaking on its own mid-stream. Below this a chunk
+ * is merged into the next, so short sentences don't stutter.
+ */
+const MIN_CHUNK_CHARS = 12
+
+/** Chrome stops synthesising after ~15s unless nudged. */
+const KEEPALIVE_MS = 10000
+
 export function useTTS() {
   const [availableVoices, setAvailableVoices] = useState([])
-  const [availablePiperModels, setAvailablePiperModels] = useState([])
   const [isLoadingVoices, setIsLoadingVoices] = useState(true)
   const [isSpeaking, setIsSpeaking] = useState(false)
-  const [isPiperAvailable, setIsPiperAvailable] = useState(false)
-  const [voiceProvider, setVoiceProviderState] = useState('browser')
-  const [ttsSettings, setTtsSettingsState] = useState(null)
 
   const synthRef = useRef(null)
   const preferredVoiceRef = useRef(null)
-  const audioRef = useRef(null)
-  const piperConfigRef = useRef({ host: 'localhost', port: 5001, enabled: false, model: 'en_US-lessac-medium' })
+  const unlockedRef = useRef(false)
 
-  // Streaming TTS state
+  // How much of the response has already been handed to the synthesiser,
+  // tracked as a character offset rather than a set of spoken strings: a set
+  // silently swallows a sentence the second time it appears, and "Yes." twice
+  // in one answer is not unusual.
   const currentStreamContentRef = useRef('')
-  const spokenChunksRef = useRef(new Set())  // track ALL chunks that have been spoken
-  const lastStableContentRef = useRef('')    // content that was stable before the last token
-  const lastSpeakingChunkRef = useRef(null)  // track last chunk spoken for debounce
+  const spokenLengthRef = useRef(0)
 
   const {
     ttsEnabled,
@@ -30,577 +49,218 @@ export function useTTS() {
     preferredVoice,
     toggleTtsEnabled,
     toggleTtsMuted,
-    setPreferredVoiceDb
+    setPreferredVoiceDb,
   } = useChatStore()
 
-  // Initialize speech synthesis
-  useEffect(() => {
-    if (typeof window !== 'undefined' && ('speechSynthesis' in window || 'webkitSpeechSynthesis' in window)) {
-      synthRef.current = window.speechSynthesis || window.webkitSpeechSynthesis
-      loadVoices()
-    }
-
-    // Load TTS settings from backend
-    loadTtsSettings()
-
-    return () => {
-      stop()
-    }
+  const stop = useCallback(() => {
+    if (synthRef.current) synthRef.current.cancel()
+    setIsSpeaking(false)
   }, [])
 
-  // Load TTS settings from backend
-  const loadTtsSettings = useCallback(async () => {
-    try {
-      const res = await fetch('/api/tts/settings')
-      if (res.ok) {
-        const settings = await res.json()
-        setTtsSettingsState(settings)
-        setVoiceProviderState(settings.voice_provider || 'browser')
-
-        if (settings.piper) {
-          piperConfigRef.current = {
-            host: settings.piper.host,
-            port: settings.piper.port,
-            enabled: settings.piper.enabled,
-            model: settings.piper.model
-          }
-          // Check real health instead of relying on stored flag
-          checkPiperStatus()
-        }
-      }
-
-      // Also fetch piper models
-      loadPiperModels()
-    } catch (error) {
-      console.log('Failed to load TTS settings:', error)
-    }
-  }, [])
-
-  // Load available Piper models from server
-  const loadPiperModels = useCallback(async () => {
-    try {
-      const res = await fetch('/api/tts/piper/models')
-      if (res.ok) {
-        const data = await res.json()
-        if (data.models && Array.isArray(data.models)) {
-          setAvailablePiperModels(data.models)
-        }
-      }
-    } catch (error) {
-      console.log('Failed to load Piper models:', error)
-    }
-  }, [])
-
-  // Check Piper server availability
-  const checkPiperStatus = useCallback(async () => {
-    try {
-      const res = await fetch('/api/tts/piper/health')
-      if (res.ok) {
-        const data = await res.json()
-        setIsPiperAvailable(data.available)
-        return data.available
-      }
-    } catch {
-      setIsPiperAvailable(false)
-    }
-    setIsPiperAvailable(false)
-    return false
-  }, [])
-
-  // Save TTS settings to backend
-  const saveTtsSettings = useCallback(async (settings) => {
-    try {
-      await fetch('/api/tts/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
-      })
-      loadTtsSettings()
-    } catch (error) {
-      console.error('Failed to save TTS settings:', error)
-    }
-  }, [loadTtsSettings])
-
-  // Load available voices
+  // Voice lists arrive asynchronously in Chrome, so this runs again on
+  // `voiceschanged` as well as immediately.
   const loadVoices = useCallback(() => {
-    if (!synthRef.current) return
+    const synth = synthRef.current
+    if (!synth) return
 
-    const load = () => {
-      const voices = synthRef.current.getVoices()
-      if (voices.length > 0) {
-        setAvailableVoices(voices.map(v => ({
+    const apply = () => {
+      const voices = synth.getVoices()
+      if (voices.length === 0) return
+
+      setAvailableVoices(
+        voices.map((v) => ({
           id: v.voiceURI || v.name,
           name: v.name,
           lang: v.lang,
           default: v.default,
-          localService: v.localService
-        })))
-        setIsLoadingVoices(false)
+          localService: v.localService,
+        })),
+      )
+      setIsLoadingVoices(false)
 
-        // Try to restore preferred voice
-        if (preferredVoice) {
-          const match = voices.find(v => v.voiceURI === preferredVoice || v.name === preferredVoice)
-          if (match) {
-            preferredVoiceRef.current = match
-          }
-        }
+      const saved = useChatStore.getState().preferredVoice
+      if (saved) {
+        const match = voices.find((v) => v.voiceURI === saved || v.name === saved)
+        if (match) preferredVoiceRef.current = match
       }
     }
 
-    load()
+    apply()
+    synth.onvoiceschanged = apply
+  }, [])
 
-    // Chrome loads voices asynchronously
-    synthRef.current.onvoiceschanged = load
-  }, [preferredVoice])
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const synth = window.speechSynthesis || window.webkitSpeechSynthesis
+    if (!synth) {
+      setIsLoadingVoices(false)
+      return undefined
+    }
 
-  // Set voice provider (browser or piper)
-  const setVoiceProvider = useCallback((provider) => {
-    setVoiceProviderState(provider)
-    saveTtsSettings({ voice_provider: provider })
-  }, [saveTtsSettings])
+    synthRef.current = synth
+    loadVoices()
 
-  // Set preferred voice
+    return () => {
+      synth.cancel()
+      synth.onvoiceschanged = null
+    }
+  }, [loadVoices])
+
+  // Some browsers refuse to synthesise until speak() has been reached from a
+  // user gesture. Spend the first click on a silent utterance so the real one
+  // — which arrives from a network callback — is allowed through. The previous
+  // approach queued an *empty* utterance and chained the real speech off its
+  // `end` event, which never fires for empty text.
+  useEffect(() => {
+    const unlock = () => {
+      const synth = synthRef.current
+      if (!synth || unlockedRef.current) return
+      unlockedRef.current = true
+      const primer = new SpeechSynthesisUtterance(' ')
+      primer.volume = 0
+      synth.speak(primer)
+    }
+
+    window.addEventListener('pointerdown', unlock, { once: true })
+    window.addEventListener('keydown', unlock, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
+
+  // Keep long responses alive through Chrome's ~15s synthesis timeout.
+  // resume() on a synthesiser that isn't paused is a no-op.
+  useEffect(() => {
+    if (!isSpeaking) return undefined
+    const id = setInterval(() => {
+      const synth = synthRef.current
+      if (synth?.speaking) synth.resume()
+    }, KEEPALIVE_MS)
+    return () => clearInterval(id)
+  }, [isSpeaking])
+
   const setPreferredVoice = useCallback((voiceId) => {
-    if (voiceProvider === 'browser' && synthRef.current) {
-      const voices = synthRef.current.getVoices()
-      const match = voices.find(v => v.voiceURI === voiceId || v.name === voiceId)
+    const synth = synthRef.current
+    if (!synth) return
+    const match = synth.getVoices().find((v) => v.voiceURI === voiceId || v.name === voiceId)
+    if (!match) return
+    preferredVoiceRef.current = match
+    setPreferredVoiceDb(voiceId)
+  }, [setPreferredVoiceDb])
 
-      if (match) {
-        preferredVoiceRef.current = match
-        setPreferredVoiceDb(voiceId)
-        saveTtsSettings({ preferred_voice: voiceId })
+  // Queue one utterance. The browser keeps its own FIFO, so streaming chunks
+  // simply append and play back-to-back without gaps.
+  const enqueueUtterance = useCallback((text) => {
+    const synth = synthRef.current
+    if (!synth) return false
+
+    const clean = sanitizeForSpeech(text)
+    if (!clean) return false
+
+    const utterance = new SpeechSynthesisUtterance(clean)
+    if (preferredVoiceRef.current) utterance.voice = preferredVoiceRef.current
+    utterance.rate = SPEECH_RATE
+    utterance.pitch = 1.0
+
+    const settle = () => {
+      // Only drop the flag once the whole queue has drained, or the indicator
+      // flickers between sentences of a single response.
+      if (!synth.speaking && !synth.pending) setIsSpeaking(false)
+    }
+
+    utterance.onstart = () => setIsSpeaking(true)
+    utterance.onend = settle
+    utterance.onerror = (event) => {
+      // Cancelling on barge-in raises an error; that one isn't worth logging.
+      const reason = event?.error
+      if (reason && reason !== 'interrupted' && reason !== 'canceled') {
+        console.warn('[TTS] utterance failed:', reason)
       }
-    } else {
-      // For Piper, just save the voice ID (which is the model name)
-      setPreferredVoiceDb(voiceId)
-      saveTtsSettings({ preferred_voice: voiceId })
-      piperConfigRef.current.model = voiceId
-      saveTtsSettings({ piper: { model: voiceId } })
-    }
-  }, [voiceProvider, setPreferredVoiceDb, saveTtsSettings])
-
-  // Common abbreviations to protect from sentence splitting
-  const ABBREVIATIONS = new Set([
-    'e.g.', 'i.e.', 'etc.', 'vs.', 'dr.', 'mr.', 'ms.', 'mrs.', 'prof.',
-    'st.', 'ave.', 'blvd.', 'apt.', 'p.m.', 'a.m.', 'p.m', 'a.m',
-    'inc.', 'ltd.', 'corp.', 'co.', 'dept.', 'fig.', 'eq.', 'approx.',
-    'vol.', 'nos.', 'jan.', 'feb.', 'mar.', 'apr.', 'jun.', 'jul.',
-    'aug.', 'sep.', 'oct.', 'nov.', 'dec.', 'mon.', 'tue.', 'wed.',
-    'thu.', 'fri.', 'sat.', 'sun.', 'etc', 'etc', 'fig', 'eq', 'approx',
-    'vol', 'nos', 'dept', 'inc', 'ltd', 'corp', 'co', 'p.m.', 'a.m.',
-    'p.m', 'a.m', 'mr', 'mrs', 'ms', 'dr', 'sr', 'jr', 'st', 'ave',
-    'blvd', 'apt', 'prof', 'gov', 'rep', 'sen'
-  ])
-
-  // Helper to strip markdown symbols and emojis
-  const sanitizeText = (t) => {
-    // Remove common markdown characters (*, _, `, ~)
-    let cleaned = t.replace(/[\*_`~]/g, '')
-    // Remove emojis (Unicode Emoji Presentation characters)
-    try {
-      cleaned = cleaned.replace(/\p{Emoji_Presentation}/gu, '')
-    } catch (e) {
-      // Fallback: strip known emoji ranges (Supplementary Multilingual Plane)
-      cleaned = cleaned.replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
-    }
-    return cleaned
-  }
-
-  // Stop any ongoing speech
-  const stop = useCallback(() => {
-    // Stop browser TTS
-    if (synthRef.current) {
-      synthRef.current.cancel()
+      settle()
     }
 
-    // Stop Piper audio playback
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.currentTime = 0
-      audioRef.current = null
-    }
-
-    setIsSpeaking(false)
+    // Chrome can leave the synthesiser paused after a cancel.
+    synth.resume()
+    synth.speak(utterance)
+    return true
   }, [])
 
-  // Merge abbreviations with the next chunk (e.g. 'e.' + 'g.' -> 'e.g.')
-  const mergeAbbreviations = useCallback((chunks) => {
-    if (chunks.length === 0) return chunks
+  /** Speak text as a fresh response, replacing anything already queued. */
+  const speak = useCallback((text) => {
+    if (ttsMuted) return false
+    stop()
+    return enqueueUtterance(text)
+  }, [enqueueUtterance, stop, ttsMuted])
 
-    const merged = [chunks[0]]
-    for (let i = 1; i < chunks.length; i++) {
-      const prev = merged[merged.length - 1]
-      const curr = chunks[i]
+  /** Append a chunk without interrupting what is already playing. */
+  const speakStreamingChunk = useCallback((text) => {
+    if (ttsMuted) return
+    enqueueUtterance(text)
+  }, [enqueueUtterance, ttsMuted])
 
-      // Check if previous chunk ends with an abbreviation (single letter + dots)
-      // and current chunk starts with a single letter + dots — merge them
-      const prevEndsWithAbbr = /\b[\w]\.$/.test(prev)
-      const currStartsWithAbbr = /^\.\s*[\w]\./i.test(curr)
-
-      if (prevEndsWithAbbr && currStartsWithAbbr) {
-        merged[merged.length - 1] = prev + curr
-      } else {
-        merged.push(curr)
-      }
-    }
-    return merged
-  }, [])
-
-  // Split text into sentences for natural streaming
-  const splitIntoSentences = useCallback((text) => {
-    const sentenceRegex = /[.!?]+(\s|$)+/g
-    let sentences = []
-    let lastIndex = 0
-    let match
-
-    while ((match = sentenceRegex.exec(text)) !== null) {
-      const sentence = text.substring(lastIndex, match.index + match[0].length).trim()
-      if (sentence) {
-        sentences.push(sentence)
-      }
-      lastIndex = match.index + match[0].length
-    }
-
-    const remaining = text.substring(lastIndex).trim()
-    if (remaining) {
-      sentences.push(remaining)
-    }
-
-    // Merge abbreviation fragments (e.g. 'e.' + 'g.' -> 'e.g.')
-    return mergeAbbreviations(sentences.filter(s => s.length > 0))
-  }, [mergeAbbreviations])
-
-  // Split text into natural speaking chunks (clauses, sentences, etc.)
-  const splitIntoChunks = useCallback((text) => {
-    // Prioritize sentence-ending punctuation
-    const sentenceRegex = /([.!?]+)(\s|$)/g
-    let chunks = []
-    let lastIndex = 0
-    let match
-
-    while ((match = sentenceRegex.exec(text)) !== null) {
-      const chunk = text.substring(lastIndex, match.index + match[0].length).trim()
-      if (chunk) {
-        chunks.push(chunk)
-      }
-      lastIndex = match.index + match[0].length
-    }
-
-    const remaining = text.substring(lastIndex).trim()
-    if (remaining) {
-      chunks.push(remaining)
-    }
-
-    // Merge abbreviation fragments (e.g. 'e.' + 'g.' -> 'e.g.')
-    return mergeAbbreviations(chunks.filter(c => c.length > 0))
-  }, [mergeAbbreviations])
-
-  // Check if text is "complete enough" to speak (has a sentence boundary or is long enough)
-  const isSpeakableChunk = useCallback((text) => {
-    if (!text || text.length < 10) return false
-    // Check for sentence-ending punctuation
-    if (/[.!?]+$/.test(text.trim())) return true
-    // Check for natural break points (commas, semicolons) with enough content
-    const trimmed = text.trim()
-    if (trimmed.length > 30 && (/[,.;:]/.test(trimmed[trimmed.length - 1]) || trimmed.length > 60)) return true
-    return false
-  }, [])
-
-  // Start streaming TTS for a new response
   const startStreamingTTS = useCallback(() => {
     stop()
     currentStreamContentRef.current = ''
-    lastStableContentRef.current = ''
-    spokenChunksRef.current = new Set()
+    spokenLengthRef.current = 0
   }, [stop])
 
-  // Feed streaming content — speak any new complete chunks
+  /** Feed the response accumulated so far; speak whatever is now complete. */
   const feedStreamingTTS = useCallback((content) => {
     currentStreamContentRef.current = content
-    const chunks = splitIntoChunks(content)
 
-    // Only speak the last chunk — it's the one most likely to be complete
-    // Ignore earlier chunks since they're already spoken (tracked in spokenChunksRef)
-    const lastChunk = chunks[chunks.length - 1]
-    if (lastChunk && !spokenChunksRef.current.has(lastChunk)) {
-      // Only speak if the last chunk ends with sentence-ending punctuation
-      // This ensures the sentence is truly complete
-      if (/[.!?]+$/.test(lastChunk.trim())) {
-        // Don't speak if we're already speaking this chunk — prevents rapid re-queuing
-        // Use a small debounce: skip if the same chunk was spoken within the last 200ms
-        if (!lastSpeakingChunkRef.current || lastSpeakingChunkRef.current.text !== lastChunk || Date.now() - lastSpeakingChunkRef.current.time > 200) {
-          speakStreamingChunk(lastChunk)
-          spokenChunksRef.current.add(lastChunk)
-          lastSpeakingChunkRef.current = { text: lastChunk, time: Date.now() }
-        }
-      }
-    }
-  }, [splitIntoChunks])
+    const fresh = content.slice(spokenLengthRef.current)
+    if (!fresh) return
 
-  // Complete streaming TTS — speak any remaining partial content
+    const { chunks, rest } = splitSpeakable(fresh, { minChars: MIN_CHUNK_CHARS })
+    if (chunks.length === 0) return
+
+    // `rest` is a literal suffix of `fresh`, so this offset stays exact.
+    spokenLengthRef.current = content.length - rest.length
+    for (const chunk of chunks) speakStreamingChunk(chunk)
+  }, [speakStreamingChunk])
+
+  /** Speak whatever is left once the response has finished arriving. */
   const completeStreamingTTS = useCallback(() => {
-    const content = currentStreamContentRef.current
-    if (!content.trim()) {
-      currentStreamContentRef.current = ''
-      lastStableContentRef.current = ''
-      spokenChunksRef.current = new Set()
-      return
-    }
-
-    const chunks = splitIntoChunks(content)
-    let hadNewChunk = false
-
-    // Speak any chunks we missed
-    for (const chunk of chunks) {
-      if (!spokenChunksRef.current.has(chunk)) {
-        speakStreamingChunk(chunk)
-        spokenChunksRef.current.add(chunk)
-        hadNewChunk = true
-      }
-    }
+    const fresh = currentStreamContentRef.current.slice(spokenLengthRef.current)
 
     currentStreamContentRef.current = ''
-    lastStableContentRef.current = ''
-    spokenChunksRef.current = new Set()
-  }, [splitIntoChunks])
+    spokenLengthRef.current = 0
 
-  // Speak using browser TTS (with stop)
-  const speakBrowser = useCallback((text) => {
-    if (!synthRef.current || !text || text.trim().length === 0) return false
+    if (!fresh.trim()) return
 
+    // minChars 0: nothing more is coming, so a trailing "Yes." still gets said.
+    const { chunks, rest } = splitSpeakable(fresh, { minChars: 0 })
+    for (const chunk of chunks) speakStreamingChunk(chunk)
+    if (rest.trim()) speakStreamingChunk(rest.trim())
+  }, [speakStreamingChunk])
+
+  const test = useCallback(() => {
     stop()
-
-    const sentences = splitIntoSentences(sanitizeText(text))
-    if (sentences.length === 0) return false
-
-    // Chrome blocks speechSynthesis.speak() from async callbacks without a user gesture.
-    // Workaround: queue a silent utterance first to unlock the API, then speak the real text.
-    const unlock = new SpeechSynthesisUtterance('')
-    unlock.onend = () => {
-      const speakNext = (index) => {
-        if (index >= sentences.length || ttsMuted) {
-          setIsSpeaking(false)
-          return
-        }
-
-        const utterance = new SpeechSynthesisUtterance(sentences[index])
-
-        if (preferredVoiceRef.current) {
-          utterance.voice = preferredVoiceRef.current
-        }
-
-        utterance.rate = 1.1
-        utterance.pitch = 1.0
-
-        utterance.onend = () => {
-          if (!ttsMuted) {
-            setTimeout(() => speakNext(index + 1), 50)
-          }
-        }
-
-        utterance.onerror = () => {
-          setIsSpeaking(false)
-        }
-
-        synthRef.current.speak(utterance)
-      }
-
-      setIsSpeaking(true)
-      speakNext(0)
-    }
-    synthRef.current.speak(unlock)
-    return true
-  }, [ttsMuted, splitIntoSentences, stop])
-
-  // Speak a streaming chunk — queue without cancelling previous speech
-  const speakStreamingChunk = useCallback((text) => {
-    if (!synthRef.current || !text || text.trim().length === 0) return
-
-    const sentences = splitIntoSentences(sanitizeText(text))
-    if (sentences.length === 0) return
-
-    setIsSpeaking(true)
-    const utterance = new SpeechSynthesisUtterance(sentences.join(' '))
-
-    if (preferredVoiceRef.current) {
-      utterance.voice = preferredVoiceRef.current
-    }
-
-    utterance.rate = 1.1
-    utterance.pitch = 1.0
-
-    utterance.onerror = () => {
-      setIsSpeaking(false)
-    }
-
-    synthRef.current.speak(utterance)
-  }, [splitIntoSentences])
-
-  // Speak using Piper TTS (fetches audio from backend)
-  const speakPiper = useCallback(async (text) => {
-    if (!text || text.trim().length === 0) return false
-
-    try {
-      const model = piperConfigRef.current.model || 'en_US-lessac-medium'
-
-      const response = await fetch('/api/tts/synthesize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: sanitizeText(text), model })
-      })
-
-      if (!response.ok) {
-        throw new Error('Piper synthesis failed')
-      }
-
-      const result = await response.json()
-
-      if (result.audio) {
-        stop()
-
-        // Convert hex to blob and play
-        const audioData = new Uint8Array(
-          result.audio.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
-        )
-        const blob = new Blob([audioData], { type: 'audio/wav' })
-        const url = URL.createObjectURL(blob)
-
-        const audio = new Audio(url)
-        audioRef.current = audio
-
-        audio.onplay = () => setIsSpeaking(true)
-        audio.onended = () => {
-          setIsSpeaking(false)
-          URL.revokeObjectURL(url)
-        }
-        audio.onerror = () => {
-          setIsSpeaking(false)
-          URL.revokeObjectURL(url)
-        }
-
-        await audio.play()
-        return true
-      }
-    } catch (error) {
-      console.error('Piper TTS error:', error)
-      // Fall back to browser TTS
-      return speakBrowser(text)
-    }
-
-    return false
-  }, [stop, speakBrowser])
-
-  // Speak text (routes to appropriate provider)
-  const speak = useCallback(async (text) => {
-    console.log('[TTS] speak called — text:', text.substring(0, 50), 'voiceProvider:', voiceProvider, 'isPiperAvailable:', isPiperAvailable, 'ttsMuted:', ttsMuted)
-    if (!text || text.trim().length === 0) {
-      console.log('[TTS] speak: empty text, returning')
-      return
-    }
-    if (ttsMuted) {
-      console.log('[TTS] speak: muted, returning')
-      return
-    }
-
-    if (voiceProvider === 'piper' && isPiperAvailable) {
-      console.log('[TTS] Using Piper TTS')
-      await speakPiper(text)
-    } else {
-      console.log('[TTS] Using Browser TTS')
-      speakBrowser(text)
-    }
-  }, [voiceProvider, isPiperAvailable, ttsMuted, speakPiper, speakBrowser])
-
-  // Speak a single sentence
-  const speakSentence = useCallback((text, immediate = false) => {
-    if (immediate && ttsMuted) return
-    speak(text)
-  }, [speak, ttsMuted])
-
-  // Interrupt speech
-  const interrupt = useCallback(() => {
-    stop()
-  }, [stop])
-
-  // Test TTS
-  const test = useCallback(async () => {
-    if (voiceProvider === 'piper') {
-      const response = await fetch('/api/tts/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          voice_provider: 'piper',
-          text: "Hello! This is a test of the Piper text-to-speech system. Your neural voices are working correctly!"
-        })
-      })
-      const result = await response.json()
-      if (result.audio) {
-        stop()
-        const audioData = new Uint8Array(
-          result.audio.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
-        )
-        const blob = new Blob([audioData], { type: 'audio/wav' })
-        const url = URL.createObjectURL(blob)
-        const audio = new Audio(url)
-        audioRef.current = audio
-        audio.onplay = () => setIsSpeaking(true)
-        audio.onended = () => {
-          setIsSpeaking(false)
-          URL.revokeObjectURL(url)
-        }
-        await audio.play()
-      }
-    } else {
-      speakBrowser("Hello! This is a test of the text-to-speech settings. Your browser voices are working correctly!")
-    }
-  }, [voiceProvider, speakBrowser, stop])
-
-  // Configure Piper settings
-  const setPiperConfig = useCallback((config) => {
-    if (config.host) piperConfigRef.current.host = config.host
-    if (config.port) piperConfigRef.current.port = config.port
-    if (config.enabled !== undefined) piperConfigRef.current.enabled = config.enabled
-    if (config.model) piperConfigRef.current.model = config.model
-
-    saveTtsSettings({ piper: config })
-  }, [saveTtsSettings])
-
-  // Toggle Piper enabled
-  const togglePiper = useCallback((enabled) => {
-    setPiperConfig({ enabled })
-    setIsPiperAvailable(enabled)
-  }, [setPiperConfig])
+    enqueueUtterance('This is a test of the selected voice. If you can hear this, speech output is working.')
+  }, [enqueueUtterance, stop])
 
   return {
     // State
     availableVoices,
-    availablePiperModels,
     isLoadingVoices,
     isSpeaking,
-    isPiperAvailable,
-    voiceProvider,
+    isSupported: Boolean(synthRef.current),
     ttsEnabled,
     ttsMuted,
     preferredVoice,
-    piperConfig: piperConfigRef.current,
 
     // Actions
     setPreferredVoice,
-    setVoiceProvider,
     speak,
-    speakSentence,
     startStreamingTTS,
     feedStreamingTTS,
     completeStreamingTTS,
     stop,
-    interrupt,
+    interrupt: stop,
     test,
     toggleTtsEnabled,
     toggleTtsMuted,
-    checkPiperStatus,
-    setPiperConfig,
-    togglePiper,
-    loadPiperModels
   }
 }
 

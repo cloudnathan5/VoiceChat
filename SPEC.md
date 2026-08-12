@@ -3,9 +3,12 @@
 ## Project Overview
 
 **Project Name:** VoiceChat
-**Type:** Web Application (React + Node.js)
-**Core Functionality:** Aesthetic AI chat interface with real-time bidirectional voice communication, configurable LLM providers, and persistent conversation threads.
+**Type:** Static web application (React + Vite, no server)
+**Core Functionality:** Low-latency spoken conversation with any OpenAI-compatible text model, plus configurable providers and persistent conversation threads.
 **Target Users:** Developers and power users who want a unified interface for chatting with various AI models via text or voice.
+
+> This document is the design spec. For how the shipped app is put together,
+> see the README.
 
 ---
 
@@ -177,9 +180,9 @@
   - Connection quality indicator
 
 **6. Persistence**
-- SQLite database for threads and messages (via better-sqlite3)
-- Settings in localStorage
-- Provider credentials (encrypted in SQLite)
+- Threads, messages and settings in localStorage
+- Provider credentials in localStorage — see the README on why that is a
+  deliberate trade-off and what it costs
 
 ### User Interactions and Flows
 
@@ -232,19 +235,18 @@
 ## Technical Architecture
 
 ### Frontend (React + Vite)
-- React 18 with hooks
-- React Router for navigation
+- React 19 with hooks
 - Zustand for state management
-- React Query for API calls
-- Web Audio API for voice
-- WebRTC for microphone
+- Web Audio API for microphone level metering
+- Web Speech API for recognition and synthesis
 
-### Backend (Node.js + Express)
-- Express server
-- better-sqlite3 for persistence
-- Proxy requests to LLM providers (hide API keys)
-- Handle CORS
-- WebSocket for real-time voice streaming
+### No backend
+The page calls the provider's `/chat/completions` directly and streams the
+response over SSE. `/api/*` is intercepted in the browser and served from
+localStorage, so the app can be published as static files.
+
+The trade-off: the API key lives in the browser rather than behind a proxy,
+and the provider must permit cross-origin browser requests.
 
 ### Data Models
 

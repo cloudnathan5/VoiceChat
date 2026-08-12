@@ -24,6 +24,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The published site is built here rather than committed. Checking the
+      # bundle in meant every source change needed a matching rebuild by hand,
+      # and a missed one shipped stale JavaScript to the live demo.
+      - name: Build demo
+        run: npm run build:demo
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 

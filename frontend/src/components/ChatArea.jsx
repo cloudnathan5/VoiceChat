@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Mic, ChevronDown, RefreshCw, Volume2, VolumeX, Settings, StopCircle, Radio, Hand, ArrowLeft } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import { useVoiceChat } from '../hooks/useVoiceChat'
@@ -69,6 +69,7 @@ function ChatArea() {
   const [selectedProvider, setSelectedProvider] = useState('')
   const [selectedModel, setSelectedModel] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [modelError, setModelError] = useState('')
   const [showTtsMenu, setShowTtsMenu] = useState(false)
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
@@ -99,16 +100,13 @@ function ChatArea() {
   // TTS hook
   const {
     availableVoices,
-    availablePiperModels,
     isLoadingVoices,
     isSpeaking: isTtsSpeaking,
-    isPiperAvailable,
-    voiceProvider,
+    isSupported: isTtsSupported,
     ttsEnabled,
     ttsMuted,
     preferredVoice,
     setPreferredVoice,
-    setVoiceProvider,
     speak,
     startStreamingTTS,
     feedStreamingTTS,
@@ -116,8 +114,7 @@ function ChatArea() {
     stop: stopTts,
     toggleTtsEnabled,
     toggleTtsMuted,
-    test: testTts,
-    checkPiperStatus
+    test: testTts
   } = useTTS()
 
   // Close TTS menu when clicking outside
@@ -159,6 +156,33 @@ function ChatArea() {
     }
   }, [transcript, isListening, isRecording])
 
+  // Load a provider's model list, reporting why if it doesn't work.
+  //
+  // This used to be four copies of the same fetch, each swallowing failures
+  // into console.error. Combined with a backend that answered a failed lookup
+  // with a plausible-looking stub list, a wrong URL or a rejected key looked
+  // exactly like success right up until the first message failed.
+  const loadModels = useCallback(async (providerId) => {
+    if (!providerId) return
+    setIsRefreshing(true)
+    setModelError('')
+    try {
+      const response = await fetch(`/api/providers/${providerId}/models`)
+      const data = await response.json()
+      if (!response.ok) {
+        setModelError(data?.error || `Could not list models (HTTP ${response.status}).`)
+        setProviderModels(providerId, [])
+        return
+      }
+      setProviderModels(providerId, Array.isArray(data) ? data : [])
+    } catch (error) {
+      setModelError(error?.message || 'Could not list models.')
+      setProviderModels(providerId, [])
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [setProviderModels])
+
   // Restore last-used provider/model on mount (if no thread is active yet)
   useEffect(() => {
     if (!providers.length) return
@@ -167,17 +191,7 @@ function ChatArea() {
     if (lastProviderId) {
       setSelectedProvider(lastProviderId)
       setSelectedModel(lastModelId || '')
-      // Fetch models for this provider
-      fetch(`/api/providers/${lastProviderId}/models`)
-        .then(res => res.json())
-        .then(data => {
-          if (Array.isArray(data)) {
-            setProviderModels(lastProviderId, data)
-          }
-        })
-        .catch(error => {
-          console.error('Failed to refresh models:', error)
-        })
+      loadModels(lastProviderId)
     }
   }, [])
 
@@ -187,25 +201,9 @@ function ChatArea() {
       const providerId = activeThread.selected_provider_id || activeThread.provider_id || ''
       setSelectedProvider(providerId)
       setSelectedModel(activeThread.selected_model_id || '')
-
-      if (providerId) {
-        setIsRefreshing(true)
-        fetch(`/api/providers/${providerId}/models`)
-          .then(res => res.json())
-          .then(data => {
-            if (Array.isArray(data)) {
-              setProviderModels(providerId, data)
-            }
-          })
-          .catch(error => {
-            console.error('Failed to refresh models:', error)
-          })
-          .finally(() => {
-            setIsRefreshing(false)
-          })
-      }
+      loadModels(providerId)
     }
-  }, [activeThread, setProviderModels])
+  }, [activeThread, loadModels])
 
   const handleVoiceSelect = (voiceId) => {
     setPreferredVoice(voiceId)
@@ -484,22 +482,7 @@ function ChatArea() {
   }
 
   // Refresh models for selected provider
-  const handleRefreshModels = async () => {
-    if (!selectedProvider) return
-
-    setIsRefreshing(true)
-    try {
-      const response = await fetch(`/api/providers/${selectedProvider}/models`)
-      const data = await response.json()
-      if (response.ok) {
-        setProviderModels(selectedProvider, data)
-      }
-    } catch (error) {
-      console.error('Failed to refresh models:', error)
-    } finally {
-      setIsRefreshing(false)
-    }
-  }
+  const handleRefreshModels = () => loadModels(selectedProvider)
 
   const handleProviderChange = async (e) => {
     const newProviderId = e.target.value
@@ -507,20 +490,7 @@ function ChatArea() {
     setSelectedModel('')
     setLastUsedSelections(newProviderId, '')
 
-    if (newProviderId) {
-      setIsRefreshing(true)
-      try {
-        const response = await fetch(`/api/providers/${newProviderId}/models`)
-        const data = await response.json()
-        if (response.ok) {
-          setProviderModels(newProviderId, data)
-        }
-      } catch (error) {
-        console.error('Failed to refresh models:', error)
-      } finally {
-        setIsRefreshing(false)
-      }
-    }
+    await loadModels(newProviderId)
 
     if (activeThread) {
       try {
@@ -848,62 +818,24 @@ function ChatArea() {
                     )}
                   </div>
 
-                  {/* Provider Selection */}
                   {ttsEnabled && (
-                    <div className={`p-3 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-                      <div className={`text-xs font-medium mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        TTS Provider
-                      </div>
-                      <div className="flex gap-2">
+                    <div className={`p-3 border-b flex items-center justify-between ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                      <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {isTtsSupported ? 'Voice' : 'Speech output not supported here'}
+                      </span>
+                      {isTtsSupported && (
                         <button
-                          onClick={() => setVoiceProvider('browser')}
-                          className={`flex-1 px-3 py-2 text-xs rounded-lg border transition-colors ${
-                            voiceProvider === 'browser'
-                              ? 'bg-cyan-600 text-white border-cyan-600'
-                              : darkMode
-                                ? 'bg-gray-700 text-gray-300 border-gray-600 hover:bg-gray-600'
-                                : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                          }`}
+                          onClick={testTts}
+                          className={`text-xs px-2 py-1 rounded ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                         >
-                          <div className="font-medium">Browser</div>
-                          <div className={`text-[10px] ${voiceProvider === 'browser' ? 'text-cyan-100' : darkMode ? 'text-gray-500' : 'text-gray-400'}`}>OS Voices</div>
+                          Test
                         </button>
-                        <button
-                          onClick={() => {
-                            if (isPiperAvailable) {
-                              setVoiceProvider('piper')
-                            } else {
-                              checkPiperStatus()
-                            }
-                          }}
-                          className={`flex-1 px-3 py-2 text-xs rounded-lg border transition-colors ${
-                            voiceProvider === 'piper'
-                              ? 'bg-cyan-600 text-white border-cyan-600'
-                              : isPiperAvailable
-                                ? darkMode
-                                  ? 'bg-gray-700 text-gray-300 border-gray-600 hover:bg-gray-600'
-                                  : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                                : darkMode
-                                  ? 'bg-gray-700 text-gray-500 border-gray-600 opacity-60'
-                                  : 'bg-gray-100 text-gray-400 border-gray-300 opacity-60'
-                          }`}
-                        >
-                          <div className="font-medium">Piper</div>
-                          <div className={`text-[10px] ${voiceProvider === 'piper' ? 'text-cyan-100' : isPiperAvailable ? (darkMode ? 'text-gray-500' : 'text-gray-400') : 'text-red-400'}`}>
-                            {isPiperAvailable ? 'Local TTS' : 'Not running'}
-                          </div>
-                        </button>
-                      </div>
-                      {voiceProvider === 'piper' && !isPiperAvailable && (
-                        <div className={`mt-2 text-[10px] p-2 rounded ${darkMode ? 'bg-red-500/20 text-red-400' : 'bg-red-50 text-red-600'}`}>
-                          Start Piper server on port 5001
-                        </div>
                       )}
                     </div>
                   )}
 
-                  {/* Voice List - Browser */}
-                  {ttsEnabled && voiceProvider === 'browser' && (
+                  {/* Voice list */}
+                  {ttsEnabled && isTtsSupported && (
                     <div className="max-h-48 overflow-y-auto p-2">
                       {isLoadingVoices ? (
                         <div className={`p-4 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -932,35 +864,25 @@ function ChatArea() {
                     </div>
                   )}
 
-                  {/* Voice List - Piper */}
-                  {ttsEnabled && voiceProvider === 'piper' && (
-                    <div className="max-h-48 overflow-y-auto p-2">
-                      {availablePiperModels.length > 0 ? (
-                        availablePiperModels.map(model => (
-                          <div
-                            key={model.id}
-                            onClick={() => handleVoiceSelect(model.id)}
-                            className={`px-3 py-2 text-sm cursor-pointer rounded-lg transition-colors ${
-                              darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                            } ${preferredVoice === model.id ? (darkMode ? 'bg-cyan-600/30 text-cyan-400' : 'bg-cyan-100 text-cyan-700') : (darkMode ? 'text-gray-300' : 'text-gray-700')}`}
-                          >
-                            <div className="font-medium">{model.name}</div>
-                            <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                              {model.language} • {model.quality} quality
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div className={`p-4 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          Loading Piper voices...
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           </div>
+
+          {/* Why the model list is empty — silence here used to leave people
+              staring at an empty dropdown with no idea what was wrong. */}
+          {modelError && (
+            <div
+              className={`mb-3 text-xs px-3 py-2 rounded-lg border ${
+                darkMode
+                  ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                  : 'bg-red-50 border-red-200 text-red-700'
+              }`}
+              role="status"
+            >
+              {modelError}
+            </div>
+          )}
 
           {/* Message Input Row */}
           <div className="flex items-end space-x-3">

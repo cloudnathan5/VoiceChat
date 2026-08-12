@@ -74,13 +74,6 @@ interface ChatState {
   toggleTtsMuted: () => void
 }
 
-// Database helper methods
-const getDbSetting = (db: any, key: string): string | null => {
-  const stmt = db.prepare('SELECT value FROM settings WHERE key = ?')
-  const result = stmt.get(key)
-  return result ? result.value : null
-}
-
 export const useChatStore = create<ChatState>((set, get) => ({
   // Initial state
   providers: [],
@@ -107,7 +100,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     mediaRecorder: undefined
   },
 
-  // Database helper methods that match the backend schema
+  // TTS preferences, persisted separately so they survive a cleared thread list
   getTtsEnabled: () => {
     return JSON.parse(localStorage.getItem('tts_enabled_v2') || 'false')
   },

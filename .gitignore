@@ -16,10 +16,18 @@ node_modules/
 frontend/node_modules/
 backend/node_modules/
 
-# Build outputs
+# Build outputs. `demo/` is built by the Pages workflow on every push rather
+# than committed — checking it in meant source changes shipped stale bundles
+# whenever someone forgot to rebuild. Preview locally with:
+#   npm run build:demo && npx serve demo
 dist/
 build/
+demo/
 frontend/dist/
+
+# Local dev TLS certificates (needed for microphone access over the LAN).
+# Generate your own; see frontend/vite.config.js.
+.vite-certs/
 
 # IDE
 .idea/
