@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { Send, Mic, RefreshCw, Volume2, VolumeX, Settings, StopCircle, Radio, Hand, ArrowLeft } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import { useVoiceChat } from '../hooks/useVoiceChat'
@@ -132,6 +132,25 @@ function ChatArea() {
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [showTtsMenu])
+
+  // Grow the composer to fit what's been typed, up to the max height its class
+  // list sets — past that it scrolls instead. A textarea does not do this on
+  // its own: without measuring, `rows={1}` and `min-h` pinned the box at two
+  // lines and everything after that scrolled inside a 60px window.
+  //
+  // Layout effect rather than effect: measuring after paint makes the box
+  // visibly jump a frame behind the caret.
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current
+    if (!textarea) return
+    // 'auto' first, so the box can shrink again when text is deleted —
+    // scrollHeight never reports less than the current height.
+    textarea.style.height = 'auto'
+    // scrollHeight covers content and padding but not the border, which
+    // border-box sizing includes; without it the box is 2px short and scrolls.
+    const borders = textarea.offsetHeight - textarea.clientHeight
+    textarea.style.height = `${textarea.scrollHeight + borders}px`
+  }, [inputText])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -903,6 +922,7 @@ function ChatArea() {
           <div className="flex items-end space-x-3">
             <div className="flex-1 relative">
               <textarea
+                ref={textareaRef}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyPress={handleKeyPress}
@@ -913,7 +933,7 @@ function ChatArea() {
                         : (isRecording ? 'Speak now...' : 'Listening...'))
                     : 'Type your message...'
                 }
-                className={`w-full border rounded-lg p-3 pr-24 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] max-h-[120px] transition-all ${darkMode ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'} ${
+                className={`w-full border rounded-lg p-3 pr-24 resize-none overflow-y-auto scrollbar-subtle focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] max-h-[200px] transition-colors ${darkMode ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-500' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'} ${
                   isVoiceActiveState
                     ? (isRecording ? 'border-orange-500 ring-2 ring-orange-500/20' : 'border-red-500 ring-2 ring-red-500/20')
                     : ''
