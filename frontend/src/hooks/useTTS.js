@@ -49,10 +49,8 @@ export function useTTS() {
 
   const {
     ttsEnabled,
-    ttsMuted,
     preferredVoice,
     toggleTtsEnabled,
-    toggleTtsMuted,
     setPreferredVoiceDb,
   } = useChatStore()
 
@@ -105,7 +103,14 @@ export function useTTS() {
     setIsSupported(true)
     loadVoices()
 
+    // A system with no speech voices installed reports an empty list and never
+    // fires `voiceschanged`, so "loading" would otherwise be a permanent state
+    // and the voice picker would never say anything useful. Give the event a
+    // moment, then take the empty list at its word.
+    const settle = setTimeout(() => setIsLoadingVoices(false), 2000)
+
     return () => {
+      clearTimeout(settle)
       synth.cancel()
       synth.onvoiceschanged = null
     }
@@ -193,16 +198,14 @@ export function useTTS() {
 
   /** Speak text as a fresh response, replacing anything already queued. */
   const speak = useCallback((text) => {
-    if (ttsMuted) return false
     stop()
     return enqueueUtterance(text)
-  }, [enqueueUtterance, stop, ttsMuted])
+  }, [enqueueUtterance, stop])
 
   /** Append a chunk without interrupting what is already playing. */
   const speakStreamingChunk = useCallback((text) => {
-    if (ttsMuted) return
     enqueueUtterance(text)
-  }, [enqueueUtterance, ttsMuted])
+  }, [enqueueUtterance])
 
   const startStreamingTTS = useCallback(() => {
     stop()
@@ -252,7 +255,6 @@ export function useTTS() {
     isSpeaking,
     isSupported,
     ttsEnabled,
-    ttsMuted,
     preferredVoice,
 
     // Actions
@@ -265,7 +267,6 @@ export function useTTS() {
     interrupt: stop,
     test,
     toggleTtsEnabled,
-    toggleTtsMuted,
   }
 }
 

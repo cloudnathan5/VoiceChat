@@ -17,7 +17,6 @@ interface ChatState {
   darkMode: boolean
   showSettings: boolean
   ttsEnabled: boolean
-  ttsMuted: boolean
   preferredVoice: string | null
   voiceState: VoiceState
 
@@ -66,13 +65,10 @@ interface ChatState {
   
   // TTS actions
   getTtsEnabled: () => boolean
-  getTtsMuted: () => boolean
   getPreferredVoice: () => string | null
   setTtsEnabledDb: (enabled: boolean) => void
-  setTtsMutedDb: (muted: boolean) => void
   setPreferredVoiceDb: (voice: string | null) => void
   toggleTtsEnabled: () => void
-  toggleTtsMuted: () => void
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -90,7 +86,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   darkMode: localStorage.getItem('darkMode') === 'true',
   showSettings: false,
   ttsEnabled: JSON.parse(localStorage.getItem('tts_enabled_v2') || 'false'),
-  ttsMuted: JSON.parse(localStorage.getItem('tts_muted_v2') || 'false'),
   preferredVoice: localStorage.getItem('tts_preferred_voice_v2') || null,
   voiceState: {
     isActive: false,
@@ -105,17 +100,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   getTtsEnabled: () => {
     return JSON.parse(localStorage.getItem('tts_enabled_v2') || 'false')
   },
-  getTtsMuted: () => {
-    return JSON.parse(localStorage.getItem('tts_muted_v2') || 'false')
-  },
   getPreferredVoice: () => {
     return localStorage.getItem('tts_preferred_voice_v2') || null
   },
   setTtsEnabledDb: (enabled: boolean) => {
     localStorage.setItem('tts_enabled_v2', JSON.stringify(enabled))
-  },
-  setTtsMutedDb: (muted: boolean) => {
-    localStorage.setItem('tts_muted_v2', JSON.stringify(muted))
   },
   setPreferredVoiceDb: (voice: string | null) => {
     localStorage.setItem('tts_preferred_voice_v2', voice || '')
@@ -135,11 +124,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const newEnabled = !state.ttsEnabled
     state.setTtsEnabledDb(newEnabled)
     return { ttsEnabled: newEnabled }
-  }),
-  toggleTtsMuted: () => set((state) => {
-    const newMuted = !state.ttsMuted
-    state.setTtsMutedDb(newMuted)
-    return { ttsMuted: newMuted }
   }),
   // Provider actions
   setProviders: (providers) => set({ providers }),

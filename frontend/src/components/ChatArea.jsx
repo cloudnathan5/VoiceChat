@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
-import { Send, Mic, RefreshCw, Volume2, VolumeX, Settings, StopCircle, Radio, Hand, ArrowLeft } from 'lucide-react'
+import { Send, Mic, RefreshCw, Volume2, VolumeX, StopCircle, Radio, Hand, ArrowLeft } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import { useVoiceChat } from '../hooks/useVoiceChat'
 import { useTTS } from '../hooks/useTTS'
@@ -71,10 +71,8 @@ function ChatArea() {
   const [selectedModel, setSelectedModel] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [modelError, setModelError] = useState('')
-  const [showTtsMenu, setShowTtsMenu] = useState(false)
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
-  const ttsMenuRef = useRef(null)
 
   // Enhanced voice chat hook
   const {
@@ -105,7 +103,6 @@ function ChatArea() {
     isSpeaking: isTtsSpeaking,
     isSupported: isTtsSupported,
     ttsEnabled,
-    ttsMuted,
     preferredVoice,
     setPreferredVoice,
     speak,
@@ -114,24 +111,7 @@ function ChatArea() {
     completeStreamingTTS,
     stop: stopTts,
     toggleTtsEnabled,
-    toggleTtsMuted,
-    test: testTts
   } = useTTS()
-
-  // Close TTS menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (ttsMenuRef.current && !ttsMenuRef.current.contains(event.target)) {
-        setShowTtsMenu(false)
-      }
-    }
-    if (showTtsMenu) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [showTtsMenu])
 
   // Grow the composer to fit what's been typed, up to the max height its class
   // list sets — past that it scrolls instead. A textarea does not do this on
@@ -227,7 +207,13 @@ function ChatArea() {
 
   const handleVoiceSelect = (voiceId) => {
     setPreferredVoice(voiceId)
-    setShowTtsMenu(false)
+  }
+
+  // Turning speech off should also silence what is already mid-sentence,
+  // rather than letting the current reply finish talking over the decision.
+  const handleToggleTts = () => {
+    if (ttsEnabled) stopTts()
+    toggleTtsEnabled()
   }
 
   // Send a message (text or voice transcript)
@@ -287,9 +273,7 @@ function ChatArea() {
     let thinkingContent = ''
 
     // Initialize streaming TTS queue
-    const ttsEnabledState = useChatStore.getState().ttsEnabled
-    const ttsMutedState = useChatStore.getState().ttsMuted
-    if (ttsEnabledState && !ttsMutedState) {
+    if (useChatStore.getState().ttsEnabled) {
       startStreamingTTS()
     }
 
@@ -308,9 +292,7 @@ function ChatArea() {
         })
 
         // Feed content to streaming TTS queue
-        const ttsEnabledState = useChatStore.getState().ttsEnabled
-        const ttsMutedState = useChatStore.getState().ttsMuted
-        if (ttsEnabledState && !ttsMutedState) {
+        if (useChatStore.getState().ttsEnabled) {
           feedStreamingTTS(fullContent)
         }
       },
@@ -345,9 +327,7 @@ function ChatArea() {
         setIsStreaming(false)
 
         // Complete streaming TTS — speak any remaining partial content
-        const ttsEnabledState = useChatStore.getState().ttsEnabled
-        const ttsMutedState = useChatStore.getState().ttsMuted
-        if (ttsEnabledState && !ttsMutedState && fullContent.trim()) {
+        if (useChatStore.getState().ttsEnabled && fullContent.trim()) {
           completeStreamingTTS()
         }
       },
@@ -567,6 +547,16 @@ function ChatArea() {
         hint: provider.baseUrl || provider.base_url || '',
       })),
     [providers],
+  )
+
+  const voiceOptions = useMemo(
+    () =>
+      availableVoices.map((voice) => ({
+        value: voice.id,
+        label: voice.name,
+        hint: [voice.lang, voice.default ? 'Default' : ''].filter(Boolean).join(' • '),
+      })),
+    [availableVoices],
   )
 
   // The id is worth showing under the name: OpenRouter labels a model
@@ -794,113 +784,50 @@ function ChatArea() {
               </button>
             )}
 
-            {/* TTS Toggle - Settings Menu */}
-            <div className="relative" ref={ttsMenuRef}>
-              <button
-                onClick={() => setShowTtsMenu(!showTtsMenu)}
-                className={`p-2 rounded-lg transition-colors ${ttsEnabled && !ttsMuted ? (darkMode ? 'bg-cyan-600 hover:bg-cyan-700 text-white' : 'bg-cyan-500 hover:bg-cyan-600 text-white') : ttsEnabled && ttsMuted ? (darkMode ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400' : 'bg-amber-100 hover:bg-amber-200 text-amber-600') : darkMode ? 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'}`}
-                title={ttsEnabled ? (ttsMuted ? 'Unmute TTS' : 'Mute TTS') : 'Enable TTS'}
-              >
-                {ttsEnabled ? (
-                  ttsMuted ? <VolumeX size={18} /> : <Volume2 size={18} />
-                ) : (
-                  <Settings size={18} className="opacity-50" />
-                )}
-              </button>
-
-              {/* TTS Settings Dropdown */}
-              {showTtsMenu && (
-                <div className={`absolute right-0 mb-2 bottom-full w-80 rounded-xl shadow-2xl border z-50 overflow-hidden ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                  {/* Header */}
-                  <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                        Text-to-Speech
-                      </span>
-                      {isTtsSpeaking && (
-                        <button
-                          onClick={stopTts}
-                          className={`text-xs px-2 py-1 rounded ${darkMode ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
-                        >
-                          Stop
-                        </button>
-                      )}
-                    </div>
-                    <label className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={ttsEnabled}
-                        onChange={toggleTtsEnabled}
-                        className="rounded text-cyan-500 focus:ring-cyan-500"
-                      />
-                      <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                        Enable TTS
-                      </span>
-                    </label>
-                    {ttsEnabled && (
-                      <label className="flex items-center gap-3 mt-2">
-                        <input
-                          type="checkbox"
-                          checked={!ttsMuted}
-                          onChange={toggleTtsMuted}
-                          className="rounded text-cyan-500 focus:ring-cyan-500"
-                        />
-                        <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                          Speak AI responses
-                        </span>
-                      </label>
-                    )}
-                  </div>
-
-                  {ttsEnabled && (
-                    <div className={`p-3 border-b flex items-center justify-between ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-                      <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {isTtsSupported ? 'Voice' : 'Speech output not supported here'}
-                      </span>
-                      {isTtsSupported && (
-                        <button
-                          onClick={testTts}
-                          className={`text-xs px-2 py-1 rounded ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                        >
-                          Test
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Voice list */}
-                  {ttsEnabled && isTtsSupported && (
-                    <div className="max-h-48 overflow-y-auto scrollbar-subtle p-2">
-                      {isLoadingVoices ? (
-                        <div className={`p-4 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          Loading voices...
-                        </div>
-                      ) : availableVoices.length > 0 ? (
-                        availableVoices.map(voice => (
-                          <div
-                            key={voice.id}
-                            onClick={() => handleVoiceSelect(voice.id)}
-                            className={`px-3 py-2 text-sm cursor-pointer rounded-lg transition-colors ${
-                              darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                            } ${preferredVoice === voice.id ? (darkMode ? 'bg-cyan-600/30 text-cyan-400' : 'bg-cyan-100 text-cyan-700') : (darkMode ? 'text-gray-300' : 'text-gray-700')}`}
-                          >
-                            <div className="font-medium">{voice.name}</div>
-                            <div className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                              {voice.lang} {voice.default && '• Default'}
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div className={`p-4 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          No voices available
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                </div>
+            {/* Speech Toggle — one control, like the mic button beside it.
+                This was a dropdown holding "Enable TTS" and "Speak AI
+                responses", two checkboxes for what is really one decision:
+                enabled-but-silent is not a state anyone wants. */}
+            <button
+              onClick={handleToggleTts}
+              disabled={!isTtsSupported}
+              aria-pressed={ttsEnabled}
+              className={`p-2 rounded-lg transition-colors relative disabled:opacity-50 disabled:cursor-not-allowed ${
+                ttsEnabled
+                  ? darkMode
+                    ? 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                    : 'bg-cyan-500 hover:bg-cyan-600 text-white'
+                  : darkMode
+                    ? 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300'
+              }`}
+              title={
+                !isTtsSupported
+                  ? 'This browser cannot speak replies'
+                  : ttsEnabled
+                    ? 'Stop speaking replies'
+                    : 'Speak replies aloud'
+              }
+            >
+              {ttsEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              {isTtsSpeaking && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></span>
               )}
-            </div>
+            </button>
+
+            {/* Voice Selector */}
+            <SearchableSelect
+              className="flex-1 max-w-[150px]"
+              ariaLabel="Voice"
+              darkMode={darkMode}
+              value={preferredVoice || ''}
+              options={voiceOptions}
+              onChange={handleVoiceSelect}
+              disabled={!isTtsSupported || voiceOptions.length === 0}
+              placeholder={isLoadingVoices ? 'Voices...' : voiceOptions.length ? 'Voice' : 'No voices'}
+              searchPlaceholder="Search voices"
+              emptyMessage="No voices match"
+            />
           </div>
 
           {/* Why the model list is empty — silence here used to leave people

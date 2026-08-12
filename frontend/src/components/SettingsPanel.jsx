@@ -176,11 +176,9 @@ function VoiceSettings({ darkMode }) {
     isSupported,
     isSpeaking,
     ttsEnabled,
-    ttsMuted,
     preferredVoice,
     setPreferredVoice,
     toggleTtsEnabled,
-    toggleTtsMuted,
     test,
     stop,
   } = useTTS()
@@ -215,23 +213,14 @@ function VoiceSettings({ darkMode }) {
         </div>
       ) : (
         <div className="space-y-3">
-          <div className={`${card} space-y-4`}>
+          <div className={card}>
             <Toggle
               checked={ttsEnabled}
               onChange={toggleTtsEnabled}
-              label="Enable speech output"
-              description="Turn on text-to-speech in this browser"
+              label="Speak AI responses"
+              description="Read replies aloud as they stream in"
               darkMode={darkMode}
             />
-            {ttsEnabled && (
-              <Toggle
-                checked={!ttsMuted}
-                onChange={toggleTtsMuted}
-                label="Speak AI responses"
-                description="Read replies aloud as they stream in"
-                darkMode={darkMode}
-              />
-            )}
           </div>
 
           {ttsEnabled && (
