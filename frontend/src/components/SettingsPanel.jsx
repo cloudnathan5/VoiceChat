@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react'
-import { Plus, X, TestTube, Pencil, Eye, EyeOff, Volume2 } from 'lucide-react'
+import { Plus, X, TestTube, Pencil, Eye, EyeOff, Volume2, RotateCcw } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
 import { useTTS } from '../hooks/useTTS'
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_TTS_PROMPT } from '../lib/prompt.js'
 import SearchableSelect from './SearchableSelect'
 
 const fieldClass = (darkMode) =>
@@ -161,6 +162,97 @@ function Toggle({ checked, onChange, label, description, darkMode }) {
         />
       </span>
     </button>
+  )
+}
+
+/**
+ * One editable prompt. Saves as you type — there is no submit step to forget,
+ * and the value is only read when the next message is sent, so a half-typed
+ * prompt can't corrupt a reply in flight.
+ */
+function PromptField({ label, description, value, onChange, defaultValue, placeholder, darkMode }) {
+  const isDefault = value === defaultValue
+  const emptyDefault = defaultValue === ''
+
+  return (
+    <div className={`rounded-xl p-5 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div className="min-w-0">
+          <div className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>{label}</div>
+          <div className={`text-xs mt-0.5 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>{description}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onChange(defaultValue)}
+          disabled={isDefault}
+          title={emptyDefault ? 'Clear this prompt' : 'Restore the default wording'}
+          className={`flex-shrink-0 flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+            darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          <RotateCcw size={12} />
+          {emptyDefault ? 'Clear' : 'Reset to default'}
+        </button>
+      </div>
+
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        rows={5}
+        className={`w-full border rounded-lg px-3 py-2 text-sm leading-relaxed resize-y min-h-[110px] max-h-[400px] overflow-y-auto scrollbar-subtle focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+          darkMode
+            ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-500'
+            : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+        }`}
+      />
+
+      <div className={`mt-1.5 flex items-center justify-between text-xs ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+        <span>{isDefault ? 'Default' : 'Customised'}</span>
+        <span className="tabular-nums">{value.length} characters</span>
+      </div>
+    </div>
+  )
+}
+
+function PromptSettings({ darkMode }) {
+  const { systemPrompt, setSystemPrompt, ttsPrompt, setTtsPrompt, ttsEnabled } = useChatStore()
+
+  return (
+    <div className="mt-12">
+      <div className="mb-6">
+        <h2 className={`text-2xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Prompts</h2>
+        <p className={`mt-1 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+          Sent ahead of every message, in every chat. Changes apply to your next message.
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <PromptField
+          label="System prompt"
+          description="Standing instructions for the model — tone, role, anything it should always do."
+          value={systemPrompt}
+          onChange={setSystemPrompt}
+          defaultValue={DEFAULT_SYSTEM_PROMPT}
+          placeholder="e.g. You are a concise assistant. Answer in plain language and say when you are unsure."
+          darkMode={darkMode}
+        />
+
+        <PromptField
+          label="Speech prompt"
+          description={
+            ttsEnabled
+              ? 'Added while speech output is on, so replies are written to be heard rather than read.'
+              : 'Added only while speech output is on. Speech is currently off, so this is not being sent.'
+          }
+          value={ttsPrompt}
+          onChange={setTtsPrompt}
+          defaultValue={DEFAULT_TTS_PROMPT}
+          placeholder="Instructions for how replies should sound when spoken aloud."
+          darkMode={darkMode}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -486,6 +578,8 @@ function SettingsPanel() {
                 )}
               </div>
             )}
+
+            <PromptSettings darkMode={darkMode} />
 
             <VoiceSettings darkMode={darkMode} />
           </div>

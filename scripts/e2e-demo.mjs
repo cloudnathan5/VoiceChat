@@ -173,6 +173,8 @@ async function main() {
         ]),
       )
       localStorage.setItem('vc_messages', JSON.stringify({ t1: [] }))
+      localStorage.setItem('vc_system_prompt', JSON.stringify('Answer like a pirate.'))
+      localStorage.setItem('tts_enabled_v2', 'false')
       localStorage.setItem('lastUsedProviderId', 'p1')
       localStorage.setItem('lastUsedModelId', 'fake-model')
       localStorage.setItem('darkMode', 'true')
@@ -213,6 +215,14 @@ async function main() {
       `no empty placeholder should be sent: ${JSON.stringify(sent)}`,
     )
 
+    // ── The system prompt leads the conversation, without the speech half ──
+    assert.equal(sent[0].role, 'system', `first message should be the system prompt: ${JSON.stringify(sent)}`)
+    assert.equal(
+      sent[0].content,
+      'Answer like a pirate.',
+      'with speech off, only the system prompt should be sent',
+    )
+
     // ── A second turn carries the first as history, still without duplicates ──
     await input.fill('And Germany?')
     // The composer drops a send outright while a reply is still in flight, and
@@ -235,10 +245,45 @@ async function main() {
     const second = received[1].messages
     assert.deepEqual(
       second.map((m) => m.role),
-      ['user', 'assistant', 'user'],
-      `second request should be Q/A/Q: ${JSON.stringify(second)}`,
+      ['system', 'user', 'assistant', 'user'],
+      `second request should be system + Q/A/Q: ${JSON.stringify(second)}`,
     )
-    assert.equal(second[2].content, 'And Germany?')
+    assert.equal(second[3].content, 'And Germany?')
+
+    // ── Turning speech on appends the speech prompt, and only then ──
+    await page.evaluate(() => {
+      const speaker = [...document.querySelectorAll('button')].find((b) =>
+        /replies aloud/.test(b.getAttribute('title') || ''),
+      )
+      if (!speaker) throw new Error('speech toggle not found in the composer')
+      speaker.click()
+    })
+
+    // Fill first: the send button is disabled while the composer is empty, so
+    // waiting on it before typing waits for a condition that cannot arrive.
+    await input.fill('And Italy?')
+    await page.waitForFunction(
+      () => {
+        const send = [...document.querySelectorAll('button')].find((b) => b.querySelector('svg.lucide-send'))
+        return Boolean(send) && !send.disabled
+      },
+      { timeout: 15000 },
+    )
+    await input.press('Enter')
+
+    await waitFor(() => received.length === 3, 'the third turn to reach the endpoint')
+
+    const third = received[2].messages
+    assert.equal(third[0].role, 'system', `third request should still lead with a system message: ${JSON.stringify(third)}`)
+    assert.ok(
+      third[0].content.startsWith('Answer like a pirate.'),
+      `the system prompt should still come first: ${third[0].content}`,
+    )
+    assert.match(
+      third[0].content,
+      /spoken aloud/i,
+      `the speech prompt should be appended once speech is on: ${third[0].content}`,
+    )
 
     assert.deepEqual(badResources, [], `broken assets: ${badResources.join(' | ')}`)
     assert.deepEqual(consoleErrors, [], `uncaught errors: ${consoleErrors.join(' | ')}`)

@@ -1,5 +1,25 @@
 import { create } from 'zustand'
 import { Provider, Thread, Message, Model, VoiceState } from '../types'
+import { mergeThreadMessages } from '../lib/messages.js'
+import {
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_TTS_PROMPT,
+  STORAGE_KEYS as PROMPT_KEYS,
+} from '../lib/prompt.js'
+
+/**
+ * Read a JSON-encoded preference. Corrupt storage returns the default rather
+ * than throwing — this runs while the store is being created, so an exception
+ * here takes the whole app down before it renders.
+ */
+function readStored<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw === null ? fallback : JSON.parse(raw)
+  } catch {
+    return fallback
+  }
+}
 
 interface ChatState {
   // State
@@ -18,6 +38,8 @@ interface ChatState {
   showSettings: boolean
   ttsEnabled: boolean
   preferredVoice: string | null
+  systemPrompt: string
+  ttsPrompt: string
   voiceState: VoiceState
 
   // Actions
@@ -69,6 +91,10 @@ interface ChatState {
   setTtsEnabledDb: (enabled: boolean) => void
   setPreferredVoiceDb: (voice: string | null) => void
   toggleTtsEnabled: () => void
+
+  // Prompt actions
+  setSystemPrompt: (prompt: string) => void
+  setTtsPrompt: (prompt: string) => void
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -87,6 +113,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   showSettings: false,
   ttsEnabled: JSON.parse(localStorage.getItem('tts_enabled_v2') || 'false'),
   preferredVoice: localStorage.getItem('tts_preferred_voice_v2') || null,
+  systemPrompt: readStored(PROMPT_KEYS.systemPrompt, DEFAULT_SYSTEM_PROMPT),
+  ttsPrompt: readStored(PROMPT_KEYS.ttsPrompt, DEFAULT_TTS_PROMPT),
   voiceState: {
     isActive: false,
     isListening: false,
@@ -125,6 +153,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     state.setTtsEnabledDb(newEnabled)
     return { ttsEnabled: newEnabled }
   }),
+  // Prompt actions. Persisted as JSON so an emptied prompt round-trips as ""
+  // — a deliberate choice — rather than as an absent key, which means default.
+  setSystemPrompt: (prompt) => {
+    localStorage.setItem(PROMPT_KEYS.systemPrompt, JSON.stringify(prompt))
+    set({ systemPrompt: prompt })
+  },
+  setTtsPrompt: (prompt) => {
+    localStorage.setItem(PROMPT_KEYS.ttsPrompt, JSON.stringify(prompt))
+    set({ ttsPrompt: prompt })
+  },
+
   // Provider actions
   setProviders: (providers) => set({ providers }),
   addProvider: (provider) => set((state) => ({
@@ -146,17 +185,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       fetch(`/api/threads/${thread.id}/messages`)
         .then(res => res.json())
         .then(messages => {
-          const latestState = get()
-          const threadStreamingMessage = latestState.streamingMessages.find(m => m.threadId === thread.id)
-          if (threadStreamingMessage) {
-            const nonStreamingMessages = messages.filter(m => !m.isStreaming || m.id === threadStreamingMessage.id)
-            const filteredNonStreaming = nonStreamingMessages.filter(m => m.id !== threadStreamingMessage.id)
-            set({ messages: [...filteredNonStreaming, threadStreamingMessage] })
-          } else {
-            // Filter out any leftover streaming messages (isStreaming: true with empty content)
-            const nonStreamingMessages = messages.filter(m => !m.isStreaming)
-            set({ messages: nonStreamingMessages })
-          }
+          const inFlight = get().streamingMessages.filter(m => m.threadId === thread.id)
+          set({ messages: mergeThreadMessages(messages, inFlight) })
         })
     } else {
       // Clear messages when no thread is active
@@ -222,9 +252,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   replaceStreamingMessage: (id, message) => set((state) => {
     // Update in both messages and streamingMessages
     const updatedMessages = state.messages.map(m => m.id === id ? message : m)
+    // Only genuinely in-flight replies belong here. Leaving finished ones
+    // behind — which is what this used to do — meant every completed message
+    // stayed forever, and reopening the thread laid a stale "streaming"
+    // message back over the list and moved it to the bottom.
     const existingStreaming = state.streamingMessages.find(m => m.id === id)
     let updatedStreamingMessages
-    if (existingStreaming) {
+    if (!message.isStreaming) {
+      updatedStreamingMessages = state.streamingMessages.filter(m => m.id !== id)
+    } else if (existingStreaming) {
       updatedStreamingMessages = state.streamingMessages.map(m => m.id === id ? message : m)
     } else {
       updatedStreamingMessages = [...state.streamingMessages, message]

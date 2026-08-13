@@ -17,6 +17,12 @@ import {
   extractDelta,
 } from '../lib/provider.js'
 import { splitSpeakable } from '../lib/text.js'
+import {
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_TTS_PROMPT,
+  STORAGE_KEYS,
+  composeSystemPrompt,
+} from '../lib/prompt.js'
 
 const MAX_TOKENS = 2048
 
@@ -72,8 +78,18 @@ function createSocket() {
       return
     }
 
+    // Read at send time, not at mount: the prompts and the speech toggle can
+    // both change between turns, and the next message should use what is set
+    // now. An absent key falls back to the default; one the user has emptied
+    // is stored as "" and is honoured as a deliberate choice.
+    const systemPrompt = composeSystemPrompt({
+      systemPrompt: readStore(STORAGE_KEYS.systemPrompt, DEFAULT_SYSTEM_PROMPT),
+      ttsPrompt: readStore(STORAGE_KEYS.ttsPrompt, DEFAULT_TTS_PROMPT),
+      ttsEnabled: readStore('tts_enabled_v2', false),
+    })
+
     const stored = readStore('vc_messages', {})[threadId] || []
-    const messages = buildMessages(stored, content)
+    const messages = buildMessages(stored, content, { systemPrompt })
     if (messages.length === 0) {
       emit('stream_error', { error: 'Nothing to send.' })
       release()

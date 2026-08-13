@@ -442,8 +442,12 @@ function ChatArea() {
     } else {
       // Start voice chat
       try {
-        abortGeneration()
-        stopTts()
+        // Opening the mic is not an interruption. Aborting the reply and
+        // cutting off speech here meant switching to voice killed whatever was
+        // being said even if the user then sat in silence. Barge-in is already
+        // handled below, on the first transcribed word — that is the signal
+        // that someone actually started talking.
+        resetInterruptFlag()
         // Auto-enable TTS when entering voice mode so responses are spoken
         if (!ttsEnabled) {
           toggleTtsEnabled()
