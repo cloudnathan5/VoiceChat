@@ -590,8 +590,8 @@ function ChatArea() {
   return (
     <div className={`flex-1 flex flex-col min-h-0 ${darkMode ? 'bg-gray-950' : 'bg-white'}`}>
       {/* Header */}
-      <div className={`border-b px-6 py-4 flex-shrink-0 ${darkMode ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}`}>
-        <div className="flex items-center justify-between">
+      <div className={`app-header border-b px-6 ${darkMode ? 'border-gray-800 bg-gray-900' : 'border-gray-200 bg-white'}`}>
+        <div className="flex items-center justify-between w-full">
           <div>
             <h2 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
               {showSettings ? 'Settings' : activeThread.title}

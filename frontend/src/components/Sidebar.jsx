@@ -103,28 +103,22 @@ function Sidebar() {
         darkMode ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-200'
       }`}
     >
-      {/* Header */}
-      <div className={`border-b ${isCollapsed ? 'p-3' : 'p-6'} ${darkMode ? 'border-gray-800' : 'border-gray-200'}`}>
+      {/* Header — height fixed by .app-header so its bottom border lines up
+          with the main pane's. Anything that isn't the title or a header
+          control belongs below it, or the two borders drift apart. */}
+      <div
+        className={`app-header border-b ${isCollapsed ? 'justify-center' : 'px-6 justify-between'} ${
+          darkMode ? 'border-gray-800' : 'border-gray-200'
+        }`}
+      >
         {isCollapsed ? (
-          // Collapsed: the two things worth a click without expanding first.
-          <div className="flex flex-col items-center gap-1">
-            {collapseToggle}
-            <button
-              onClick={handleNewThread}
-              className="p-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors"
-              title="New chat"
-              aria-label="New chat"
-            >
-              <Plus size={20} />
-            </button>
-          </div>
+          collapseToggle
         ) : (
           <>
-            <div className="flex items-center justify-between">
-              <h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                VoiceChat
-              </h1>
-              <div className="flex items-center gap-1">
+            <h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              VoiceChat
+            </h1>
+            <div className="flex items-center gap-1">
                 <button
                   onClick={toggleDarkMode}
                   className={`p-2 rounded-lg transition-colors ${
@@ -151,23 +145,37 @@ function Sidebar() {
                 >
                   <Settings size={20} />
                 </button>
-                {collapseToggle}
-              </div>
+              {collapseToggle}
             </div>
-            <button
-              onClick={handleNewThread}
-              className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors font-medium"
-            >
-              <Plus size={16} /> New Chat
-            </button>
           </>
         )}
       </div>
 
-      {/* Threads */}
-      <div className="flex-1 overflow-y-auto scrollbar-subtle">
+      {/* New chat — below the header, not inside it. */}
+      <div className={isCollapsed ? 'p-2' : 'px-6 py-4'}>
         {isCollapsed ? (
-          <div className="p-2 space-y-1">
+          <button
+            onClick={handleNewThread}
+            className="w-full p-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center transition-colors"
+            title="New chat"
+            aria-label="New chat"
+          >
+            <Plus size={20} />
+          </button>
+        ) : (
+          <button
+            onClick={handleNewThread}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors font-medium"
+          >
+            <Plus size={16} /> New Chat
+          </button>
+        )}
+      </div>
+
+      {/* Threads */}
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-subtle">
+        {isCollapsed ? (
+          <div className="px-2 pb-2 space-y-1">
             {threads.map((thread) => (
               <button
                 key={thread.id}
