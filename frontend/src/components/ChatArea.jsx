@@ -3,6 +3,7 @@ import { Send, Mic, RefreshCw, Volume2, VolumeX, StopCircle, Radio, Hand, ArrowL
 import { useChatStore } from '../stores/chatStore'
 import { useVoiceChat } from '../hooks/useVoiceChat'
 import { useTTS } from '../hooks/useTTS'
+import { useStickToBottom } from '../hooks/useStickToBottom'
 import MessageBubble from './MessageBubble'
 import SearchableSelect from './SearchableSelect'
 
@@ -71,7 +72,6 @@ function ChatArea() {
   const [selectedModel, setSelectedModel] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [modelError, setModelError] = useState('')
-  const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
 
   // Enhanced voice chat hook
@@ -132,13 +132,17 @@ function ChatArea() {
     textarea.style.height = `${textarea.scrollHeight + borders}px`
   }, [inputText])
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  // Follow the conversation while the reader is at the bottom of it. This used
+  // to scroll on every change unconditionally, which meant scrolling up to
+  // re-read something during a reply pulled the view straight back down again
+  // on the next token.
+  const { ref: messagesRef, onScroll: onMessagesScroll, scrollToBottom } = useStickToBottom(messages)
 
+  // A different conversation starts at its newest message, wherever the reader
+  // happened to be in the last one.
   useEffect(() => {
     scrollToBottom()
-  }, [messages])
+  }, [activeThread?.id, scrollToBottom])
 
   // Sync voice state with store
   useEffect(() => {
@@ -668,13 +672,12 @@ function ChatArea() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
+      <div ref={messagesRef} onScroll={onMessagesScroll} className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
         <div className={`px-6 py-4 min-h-full ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
           <div className="max-w-4xl mx-auto space-y-4">
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))}
-            <div ref={messagesEndRef} />
           </div>
         </div>
       </div>

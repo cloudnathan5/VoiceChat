@@ -36,6 +36,15 @@ const REPLY_TOKENS = [
   ' 2.1 million', ' residents.', ' Anything else', '?',
 ]
 
+/**
+ * Reasoning streamed ahead of the answer. Long enough to overflow the block's
+ * max height — the scrolling behaviour only exists once it does.
+ */
+const REASONING_LINES = Array.from({ length: 40 }, (_, i) => `Reasoning step ${i + 1}.\n`)
+
+/** Slowed for the reasoning phase so a test can scroll it mid-stream. */
+let reasoningDelayMs = 15
+
 /** Every chat request the page made, captured for assertions. */
 const received = []
 
@@ -66,8 +75,14 @@ function serveApi(req, res, body) {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
     })
+    let r = 0
     let i = 0
     const tick = setInterval(() => {
+      if (r < REASONING_LINES.length) {
+        const payload = { choices: [{ delta: { reasoning: REASONING_LINES[r++] } }] }
+        res.write(`data: ${JSON.stringify(payload)}\n\n`)
+        return
+      }
       if (i < REPLY_TOKENS.length) {
         const payload = { choices: [{ delta: { content: REPLY_TOKENS[i++] } }] }
         // Deliberately flush mid-line: this is exactly the boundary that used
@@ -80,7 +95,7 @@ function serveApi(req, res, body) {
       clearInterval(tick)
       res.write('data: [DONE]\n\n')
       res.end()
-    }, 15)
+    }, reasoningDelayMs)
     return true
   }
 
@@ -284,6 +299,61 @@ async function main() {
       /spoken aloud/i,
       `the speech prompt should be appended once speech is on: ${third[0].content}`,
     )
+
+    // ── Reasoning follows the stream, unless the reader scrolls away ──
+    //
+    // The block is short and the reasoning overflows it, so without following
+    // it sits on its first line while text arrives out of sight below.
+    const reasoningBox = () =>
+      page.locator('[data-testid="reasoning-scroll"]').first()
+
+    // Slow the reasoning phase so there is time to scroll mid-stream.
+    reasoningDelayMs = 60
+    await input.fill('One more, with reasoning')
+    await page.waitForFunction(
+      () => {
+        const send = [...document.querySelectorAll('button')].find((b) => b.querySelector('svg.lucide-send'))
+        return Boolean(send) && !send.disabled
+      },
+      { timeout: 15000 },
+    )
+    await input.press('Enter')
+
+    // Wait until it has overflowed, then confirm it is tracking the bottom.
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-testid="reasoning-scroll"]')
+        return el && el.scrollHeight > el.clientHeight + 40
+      },
+      { timeout: 15000 },
+    )
+    const following = await reasoningBox().evaluate((el) => ({
+      distanceFromBottom: el.scrollHeight - el.scrollTop - el.clientHeight,
+      scrollTop: el.scrollTop,
+    }))
+    assert.ok(
+      following.scrollTop > 0 && following.distanceFromBottom <= 32,
+      `reasoning should follow the stream, but sat ${following.distanceFromBottom}px from the bottom`,
+    )
+
+    // Scrolling up has to win: the next chunk must not drag it back down.
+    await reasoningBox().evaluate((el) => el.scrollTo({ top: 0 }))
+    const parked = await reasoningBox().evaluate((el) => el.scrollTop)
+    await page.waitForTimeout(400) // several more reasoning chunks arrive
+    const stillParked = await reasoningBox().evaluate((el) => el.scrollTop)
+    assert.equal(
+      stillParked,
+      parked,
+      `a reader who scrolled up should stay put, but the view moved to ${stillParked}`,
+    )
+
+    // Scrolling back to the bottom resumes following.
+    await reasoningBox().evaluate((el) => el.scrollTo({ top: el.scrollHeight }))
+    await page.waitForTimeout(400)
+    const resumed = await reasoningBox().evaluate(
+      (el) => el.scrollHeight - el.scrollTop - el.clientHeight,
+    )
+    assert.ok(resumed <= 32, `returning to the bottom should resume following, was ${resumed}px away`)
 
     assert.deepEqual(badResources, [], `broken assets: ${badResources.join(' | ')}`)
     assert.deepEqual(consoleErrors, [], `uncaught errors: ${consoleErrors.join(' | ')}`)

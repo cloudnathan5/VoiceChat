@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Copy, User, ChevronRight, Brain } from 'lucide-react'
 import { useChatStore } from '../stores/chatStore'
+import { useStickToBottom } from '../hooks/useStickToBottom'
 import Markdown from './Markdown'
 
 /**
@@ -15,6 +16,13 @@ import Markdown from './Markdown'
 function ReasoningBlock({ thinking, isStreaming, darkMode }) {
   const [override, setOverride] = useState(null)
   const open = override ?? Boolean(isStreaming)
+
+  // Follow the reasoning as it is written, but only while it is being written.
+  // Expanding a finished block should leave it at the first line, which is
+  // where someone opening it wants to start reading.
+  const { ref: scrollRef, onScroll } = useStickToBottom(thinking, {
+    enabled: Boolean(isStreaming) && open,
+  })
 
   return (
     <div
@@ -41,6 +49,9 @@ function ReasoningBlock({ thinking, isStreaming, darkMode }) {
 
       {open && (
         <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          data-testid="reasoning-scroll"
           className={`px-2.5 pb-2 text-xs italic whitespace-pre-wrap max-h-64 overflow-y-auto scrollbar-subtle ${
             darkMode ? 'text-gray-400' : 'text-gray-600'
           }`}
